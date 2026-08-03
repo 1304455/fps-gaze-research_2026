@@ -1,0 +1,7 @@
+tobii-research
+pygame
+opencv-python
+numpy
+screeninfo
+keyboard
+pywin32
