@@ -1,0 +1,10 @@
+{
+  "screen_name": "example_stimulus",
+  "note": "AOI座標は正規化座標です。左上=(0,0), 右下=(1,1) を想定しています。画像や提示画面に合わせて数値を変更してください。",
+  "aois": [
+    {"name": "title", "x_min": 0.20, "x_max": 0.80, "y_min": 0.05, "y_max": 0.18},
+    {"name": "left_panel", "x_min": 0.05, "x_max": 0.45, "y_min": 0.20, "y_max": 0.85},
+    {"name": "right_panel", "x_min": 0.55, "x_max": 0.95, "y_min": 0.20, "y_max": 0.85},
+    {"name": "bottom_button", "x_min": 0.35, "x_max": 0.65, "y_min": 0.88, "y_max": 0.98}
+  ]
+}
