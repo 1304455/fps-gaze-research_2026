@@ -11,15 +11,15 @@
       "name": "minimap",
       "description": "左上のミニマップ（味方・敵情報、位置、サイト表示）",
       "x_min": 0.005,
-      "x_max": 0.180,
+      "x_max": 0.230,
       "y_min": 0.025,
-      "y_max": 0.385
+      "y_max": 0.430
     },
     {
       "name": "ally_team_status",
       "description": "上部左側の味方エージェント・生存状態表示",
       "x_min": 0.205,
-      "x_max": 0.435,
+      "x_max": 0.448,
       "y_min": 0.015,
       "y_max": 0.075
     },
