@@ -13,8 +13,8 @@
       "description": "左上のミニマップ（味方・敵情報、位置、サイト表示）",
       "center_x": 0.1175,
       "center_y": 0.2275,
-      "radius_x": 0.1125,
-      "radius_y": 0.2025
+      "radius_x": 0.1120,
+      "radius_y": 0.1992
     },
     {
       "name": "ally_team_status",
