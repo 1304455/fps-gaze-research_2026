@@ -23,7 +23,7 @@
       "x_min": 0.205,
       "x_max": 0.448,
       "y_min": 0.015,
-      "y_max": 0.075
+      "y_max": 0.080
     },
     {
       "name": "round_timer",
@@ -41,7 +41,7 @@
       "x_min": 0.553,
       "x_max": 0.796,
       "y_min": 0.015,
-      "y_max": 0.075
+      "y_max": 0.080
     },
     {
       "name": "crosshair",
@@ -68,7 +68,7 @@
       "x_min": 0.386,
       "x_max": 0.613,
       "y_min": 0.895,
-      "y_max": 0.985
+      "y_max": 0.995
     },
     {
       "name": "ammo_weapon",
