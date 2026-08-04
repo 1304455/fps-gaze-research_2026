@@ -11,10 +11,10 @@
       "name": "minimap",
       "type": "circle",
       "description": "左上のミニマップ（味方・敵情報、位置、サイト表示）",
-      "center_x": 0.1175,
-      "center_y": 0.2275,
-      "radius_x": 0.1120,
-      "radius_y": 0.1992
+      "center_x": 0.1185,
+      "center_y": 0.2300,
+      "radius_x": 0.1098,
+      "radius_y": 0.1953
     },
     {
       "name": "ally_team_status",
