@@ -114,7 +114,7 @@ def main():
     parser = argparse.ArgumentParser(description="Tobii視線CSVを矩形・円形AOIで解析します。")
     parser.add_argument("--input", required=True, help="入力CSVファイル")
     parser.add_argument("--aoi", required=True, help="AOI設定JSONファイル")
-    parser.add_argument("--output_dir", default="output/aoi_result", help="出力フォルダ")
+    parser.add_argument("--output_dir", default="data/processed/aoi_result", help="出力フォルダ")
     args = parser.parse_args()
 
     out_dir = Path(args.output_dir)
