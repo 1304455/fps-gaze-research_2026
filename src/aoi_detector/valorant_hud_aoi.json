@@ -26,16 +26,16 @@
     {
       "name": "round_timer",
       "description": "上部中央のラウンドタイマー",
-      "x_min": 0.455,
-      "x_max": 0.545,
+      "x_min": 0.449,
+      "x_max": 0.552,
       "y_min": 0.010,
       "y_max": 0.085
     },
     {
       "name": "enemy_team_status",
       "description": "上部右側の敵エージェント・生存状態表示",
-      "x_min": 0.565,
-      "x_max": 0.805,
+      "x_min": 0.553,
+      "x_max": 0.796,
       "y_min": 0.015,
       "y_max": 0.075
     },
@@ -58,25 +58,25 @@
     {
       "name": "abilities",
       "description": "下部中央のアビリティ・アルティメット状態表示",
-      "x_min": 0.390,
-      "x_max": 0.625,
+      "x_min": 0.386,
+      "x_max": 0.613,
       "y_min": 0.895,
       "y_max": 0.985
     },
     {
       "name": "ammo_weapon",
       "description": "右下寄りの弾数・装備武器表示",
-      "x_min": 0.650,
-      "x_max": 0.755,
+      "x_min": 0.614,
+      "x_max": 0.724,
       "y_min": 0.895,
       "y_max": 0.985
     },
     {
       "name": "credits",
       "description": "右下の所持クレジット表示",
-      "x_min": 0.925,
-      "x_max": 0.995,
-      "y_min": 0.915,
+      "x_min": 0.935,
+      "x_max": 0.985,
+      "y_min": 0.955,
       "y_max": 0.985
     }
   ]
