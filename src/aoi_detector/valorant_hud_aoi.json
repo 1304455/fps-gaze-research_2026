@@ -1,0 +1,83 @@
+{
+  "screen_name": "valorant_hud_1366x768",
+  "coordinate_system": "normalized",
+  "reference_resolution": {
+    "width": 1366,
+    "height": 768
+  },
+  "note": "左上=(0,0)、右下=(1,1) の正規化座標です。各AOIは重複しないように定義しているため、aoi_analysis-2.py の先頭一致方式でもそのまま集計できます。ゲーム内解像度、HUDスケール、アスペクト比が変わる場合は再調整してください。",
+  "aois": [
+    {
+      "name": "minimap",
+      "description": "左上のミニマップ（味方・敵情報、位置、サイト表示）",
+      "x_min": 0.005,
+      "x_max": 0.230,
+      "y_min": 0.025,
+      "y_max": 0.430
+    },
+    {
+      "name": "ally_team_status",
+      "description": "上部左側の味方エージェント・生存状態表示",
+      "x_min": 0.205,
+      "x_max": 0.448,
+      "y_min": 0.015,
+      "y_max": 0.075
+    },
+    {
+      "name": "round_timer",
+      "description": "上部中央のラウンドタイマー",
+      "x_min": 0.449,
+      "x_max": 0.552,
+      "y_min": 0.010,
+      "y_max": 0.085
+    },
+    {
+      "name": "enemy_team_status",
+      "description": "上部右側の敵エージェント・生存状態表示",
+      "x_min": 0.553,
+      "x_max": 0.796,
+      "y_min": 0.015,
+      "y_max": 0.075
+    },
+    {
+      "name": "crosshair",
+      "description": "画面中央の照準（クロスヘア）",
+      "x_min": 0.485,
+      "x_max": 0.515,
+      "y_min": 0.475,
+      "y_max": 0.525
+    },
+    {
+      "name": "health_armor",
+      "description": "左下のHP・アーマー表示",
+      "x_min": 0.275,
+      "x_max": 0.385,
+      "y_min": 0.895,
+      "y_max": 0.985
+    },
+    {
+      "name": "abilities",
+      "description": "下部中央のアビリティ・アルティメット状態表示",
+      "x_min": 0.386,
+      "x_max": 0.613,
+      "y_min": 0.895,
+      "y_max": 0.985
+    },
+    {
+      "name": "ammo_weapon",
+      "description": "右下寄りの弾数・装備武器表示",
+      "x_min": 0.614,
+      "x_max": 0.724,
+      "y_min": 0.895,
+      "y_max": 0.985
+    },
+    {
+      "name": "credits",
+      "description": "右下の所持クレジット表示",
+      "x_min": 0.935,
+      "x_max": 0.985,
+      "y_min": 0.955,
+      "y_max": 0.985
+    }
+  ]
+}

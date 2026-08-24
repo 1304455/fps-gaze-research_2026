@@ -1,0 +1,92 @@
+{
+  "screen_name": "valorant_hud_1366x768",
+  "coordinate_system": "normalized",
+  "reference_resolution": {
+    "width": 1366,
+    "height": 768
+  },
+  "note": "左上=(0,0)、右下=(1,1) の正規化座標です。minimap と crosshair は type=circle で定義しています。circle の radius_x/radius_y は正規化座標上の半径であり、基準解像度上で円形になるように設定しています。",
+  "aois": [
+    {
+      "name": "minimap",
+      "type": "circle",
+      "description": "左上のミニマップ（味方・敵情報、位置、サイト表示）",
+      "center_x": 0.1185,
+      "center_y": 0.2300,
+      "radius_x": 0.1098,
+      "radius_y": 0.1953
+    },
+    {
+      "name": "ally_team_status",
+      "type": "rectangle",
+      "description": "上部左側の味方エージェント・生存状態表示",
+      "x_min": 0.205,
+      "x_max": 0.448,
+      "y_min": 0.015,
+      "y_max": 0.080
+    },
+    {
+      "name": "round_timer",
+      "type": "rectangle",
+      "description": "上部中央のラウンドタイマー",
+      "x_min": 0.449,
+      "x_max": 0.552,
+      "y_min": 0.010,
+      "y_max": 0.085
+    },
+    {
+      "name": "enemy_team_status",
+      "type": "rectangle",
+      "description": "上部右側の敵エージェント・生存状態表示",
+      "x_min": 0.553,
+      "x_max": 0.796,
+      "y_min": 0.015,
+      "y_max": 0.080
+    },
+    {
+      "name": "crosshair",
+      "type": "circle",
+      "description": "画面中央の照準（クロスヘア）",
+      "center_x": 0.500,
+      "center_y": 0.500,
+      "radius_x": 0.015,
+      "radius_y": 0.025
+    },
+    {
+      "name": "health_armor",
+      "type": "rectangle",
+      "description": "左下のHP・アーマー表示",
+      "x_min": 0.275,
+      "x_max": 0.385,
+      "y_min": 0.895,
+      "y_max": 0.985
+    },
+    {
+      "name": "abilities",
+      "type": "rectangle",
+      "description": "下部中央のアビリティ・アルティメット状態表示",
+      "x_min": 0.386,
+      "x_max": 0.613,
+      "y_min": 0.895,
+      "y_max": 0.995
+    },
+    {
+      "name": "ammo_weapon",
+      "type": "rectangle",
+      "description": "右下寄りの弾数・装備武器表示",
+      "x_min": 0.614,
+      "x_max": 0.724,
+      "y_min": 0.895,
+      "y_max": 0.985
+    },
+    {
+      "name": "credits",
+      "type": "rectangle",
+      "description": "右下の所持クレジット表示",
+      "x_min": 0.935,
+      "x_max": 0.985,
+      "y_min": 0.955,
+      "y_max": 0.985
+    }
+  ]
+}
