@@ -1,13 +1,21 @@
 """
 gaze_visualizer_v3.py
 ----------------------
-tobii_capture_stable_timestamped.py が出力する CSV (gaze_data_*.csv) と、
+tobii_capture_with_sync_flash_v4.py が出力する CSV (gaze_*.csv) と、
 計測時に画面を録画した動画(mp4)を入力として、以下を行うツール。
 
-  1. calibrate : 動画とCSVの時刻同期(オフセット)を対話的に決定し、sidecar json に保存する
-  2. render    : 同期済みオフセットを使い、Bee Swarm / Scan Path / Heat Map を
+  1. auto-sync : (v3.1で追加/推奨) tobii_capture_with_sync_flash_v4.py (v4.1+)が
+                 出力する *_meta.json の start_sync.delta_sec_confirmed_based
+                 (Tobii最初の視線サンプル到達時刻とOBS録画開始確認イベント時刻の
+                 差分。2026-07-29の全10セッション較正実験で1フレーム未満の誤差
+                 で妥当であることを検証済み)から、動画とCSVの同期オフセットを
+                 自動算出し、sidecar json に保存する。目視合わせが不要になる。
+  2. calibrate : 動画とCSVの時刻同期(オフセット)を対話的に決定し、sidecar json に保存する。
+                 auto-syncが使えないセッション(v4.1未満で記録した/EventClient未接続だった等)
+                 向けの手動フォールバック、またはauto-syncの結果を目視で追加確認したい場合に使う。
+  3. render    : 同期済みオフセットを使い、Bee Swarm / Scan Path / Heat Map を
                  動画に重ねた mp4 を出力する(モードごとに別ファイル)
-  3. live      : (従来互換) CSV のみをリアルタイム再生するデバッグ用ビューワー
+  4. live      : (従来互換) CSV のみをリアルタイム再生するデバッグ用ビューワー
 
 前提:
   - CSVの center_x / center_y / left_x / left_y / right_x / right_y は、
@@ -16,21 +24,28 @@ tobii_capture_stable_timestamped.py が出力する CSV (gaze_data_*.csv) と、
     (シーンカメラ等、別の座標系で撮られた動画には対応していない。
      録画解像度と動画解像度が異なる場合のみ --rec-width/--rec-height で調整可能)
   - 動画とCSVは別プロセス・別クロックで記録されるため、両者の開始時刻のズレ(オフセット)は
-    自動では分からない。まず `calibrate` を実行してオフセットを決定すること。
+    自動では分からない。`auto-sync`(推奨)または`calibrate`のいずれかを先に実行し、
+    オフセットを決定しておくこと。
 
 使い方:
   pip install pygame opencv-python numpy
   (音声を保持したい場合は ffmpeg が PATH 上にあること)
 
-  # 1. 同期オフセットを決める(1回だけ)
-  python gaze_visualizer_v3.py calibrate gaze_data_20260101.csv screen_record.mp4
+  # 1a. (推奨) メタデータのstart_syncから同期オフセットを自動算出する
+  python gaze_visualizer_v3.py auto-sync gaze_A_1_cond1_20260101.csv screen_record.mp4
+
+  # 1a'. 自動算出した値を初期値として、目視でも一度確認してから保存したい場合
+  python gaze_visualizer_v3.py auto-sync gaze_A_1_cond1_20260101.csv screen_record.mp4 --verify
+
+  # 1b. (手動フォールバック) 対話的にオフセットを決める
+  python gaze_visualizer_v3.py calibrate gaze_A_1_cond1_20260101.csv screen_record.mp4
 
   # 2. 3種類の可視化mp4を出力する
-  python gaze_visualizer_v3.py render gaze_data_20260101.csv screen_record.mp4 \
+  python gaze_visualizer_v3.py render gaze_A_1_cond1_20260101.csv screen_record.mp4 \
       --modes beeswarm scanpath heatmap --out-dir ./output
 
   # 3. (従来互換) CSVのみのリアルタイム再生
-  python gaze_visualizer_v3.py live gaze_data_20260101.csv
+  python gaze_visualizer_v3.py live gaze_A_1_cond1_20260101.csv
 """
 
 import argparse
@@ -130,46 +145,203 @@ def sync_file_path(video_path: Path) -> Path:
     return video_path.with_name(video_path.stem + "_sync.json")
 
 
-def save_sync(video_path: Path, csv_path: Path, offset_sec: float):
+def default_meta_path(csv_path: Path) -> Path:
+    """CSVパスから対応する _meta.json のパスを推定する。
+
+    tobii_capture_with_sync_flash_v4.py の命名規則
+    (`{base_name}.csv` と `{base_name}_meta.json` が同じディレクトリに出力される)
+    に準拠している。CSVを別ディレクトリに移動した場合等は --meta で明示指定すること。
+    """
+    return csv_path.with_name(csv_path.stem + "_meta.json")
+
+
+def save_sync(video_path: Path, csv_path: Path, offset_sec: float,
+              method: str = "manual_visual", source: "dict | None" = None):
+    """同期オフセットをsidecar jsonに保存する。
+
+    method: どうやってこのoffset_secを決めたかの記録(卒論の手法欄で
+      層別集計・再現性確認をしやすくするため)。想定値の例:
+        - "manual_visual": calibrateサブコマンドでの目視合わせのみ
+        - "metadata_confirmed_based": auto-syncでstart_sync.delta_sec_confirmed_based
+          から自動算出(目視確認なし)
+        - "metadata_confirmed_based_manually_adjusted": auto-sync --verify で
+          自動算出値を初期値にしつつ、目視で微調整した
+        - "metadata_request_based": confirmed_basedが取得できず、精度の劣る
+          request_basedで代替した(非推奨・要注意)
+    source: 自動算出に使った生の値(delta_sec_confirmed_based等)。トレーサビリティ用。
+    """
     data = {
         "video": str(video_path.resolve()),
         "csv": str(csv_path.resolve()),
         "offset_sec": offset_sec,
+        "method": method,
         "note": (
             "offset_sec: 動画のフレーム0が、視線計測クロック(pc_time_sec)の何秒地点に"
             "対応するか。gaze_time = video_time + offset_sec"
         ),
     }
+    if source:
+        data["source"] = source
     path = sync_file_path(video_path)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return path
 
 
-def load_sync(video_path: Path):
+def load_sync_full(video_path: Path) -> "dict | None":
+    """sync.jsonの全内容(offset_sec, method, sourceなど)を返す。存在しなければNone。"""
     path = sync_file_path(video_path)
     if not path.exists():
         return None
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return float(data.get("offset_sec", 0.0))
+        data["offset_sec"] = float(data.get("offset_sec", 0.0))
+        data.setdefault("method", "legacy_unknown")  # v3.0以前に保存されたsync.json互換
+        return data
     except Exception:
         return None
+
+
+def load_sync(video_path: Path):
+    """後方互換: offset_secのみを返す(呼び出し側でmethod等が不要な場合用)。"""
+    full = load_sync_full(video_path)
+    return full["offset_sec"] if full else None
+
+
+class MetadataSyncError(Exception):
+    """メタデータ(*_meta.json)からの自動同期オフセット算出に失敗した場合の例外。"""
+
+
+def compute_offset_from_metadata(meta_path: Path,
+                                  allow_request_based_fallback: bool = False) -> dict:
+    """tobii_capture_with_sync_flash_v4.py (v4.1+)が出力する *_meta.json の
+    start_sync から、gaze_visualizerが使うoffset_sec ( gaze_time = video_time
+    + offset_sec ) を自動算出する。
+
+    導出の考え方:
+      CSVの pc_time_sec は「Tobiiデータ購読開始(gaze_subscribe_call)」からの
+      経過秒であり、「Tobii最初の視線サンプル到達時刻」からの経過秒ではない
+      (この2つの間には、アイトラッカー内部処理・転送に由来する無視できない
+      ラグがあり、これがそもそもv4.1でOBS開始同期の基準点を購読開始から
+      最初のサンプル到達に変更した理由でもある)。
+      一方、start_sync.delta_sec_confirmed_based は
+      「OBS録画開始確認イベント時刻 - Tobii最初のサンプル到達時刻」であり、
+      2026-07-29の全10セッション較正実験で、この値を動画フレーム0の基準として
+      使うことが1フレーム未満(60fpsで約16.7ms、実測差は平均約4.1ms/最大約7.8ms)
+      の誤差で妥当だと検証済みである。
+
+      したがって、video_time=0(動画フレーム0)に対応するpc_time_sec、
+      すなわちgaze_visualizerが要求するoffset_secは:
+
+        offset_sec
+          = (obs_record_started_utc - gaze_subscribe_call_utc)
+          = (obs_record_started_utc - gaze_first_sample_utc)
+            + (gaze_first_sample_utc - gaze_subscribe_call_utc)
+          = delta_sec_confirmed_based + first_sample.pc_time_sec
+
+      first_sample.pc_time_sec 分の補正を省略すると、購読開始〜最初のサンプル
+      到達までのラグの分だけ系統的にオフセットがずれるため、この補正項は
+      省略不可(小さいから無視してよい値ではない)。
+
+    戻り値には、2026-07-29較正実験で得られたdelta_sec_confirmed_basedの実測
+    レンジ(平均約0.0188s, SD約0.0025s)から大きく外れていないかの簡易チェック
+    結果も含む(外れている場合は当該セッションの同期取得に異常があった可能性が
+    あるため、自動棄却はせず警告のみ行う)。
+
+    既知の限界: この自動算出は「OBS録画開始確認イベント時刻 ≒ 動画ファイルの
+    フレーム0の時刻」という較正実験で検証済みの近似に基づく。この近似には
+    平均約4.1ms(最大約7.8ms)の残差バイアスがあることが同実験で分かっており、
+    1フレーム未満に収まってはいるが完全にゼロではない。フレーム単位の
+    厳密性が要求される分析では、--verify で目視による最終確認を挟むことを
+    推奨する。
+    """
+    if not meta_path.exists():
+        raise MetadataSyncError(f"メタデータJSONが見つかりません: {meta_path}")
+
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    except Exception as e:
+        raise MetadataSyncError(f"メタデータJSONの読み込みに失敗しました: {meta_path} ({e})")
+
+    start_sync = meta.get("start_sync")
+    if not start_sync:
+        raise MetadataSyncError(
+            "メタデータに start_sync がありません"
+            "(tobii_capture_with_sync_flash_v4.py v4.1未満で記録されたセッション、"
+            "またはOBS連携無効/視線サンプル未到達セッションの可能性があります。"
+            "calibrateサブコマンドで手動同期してください)。"
+        )
+
+    delta_confirmed = start_sync.get("delta_sec_confirmed_based")
+    delta_request = start_sync.get("delta_sec_request_based")
+    start_sync_method = start_sync.get("method")
+
+    used_delta = delta_confirmed
+    used_kind = "confirmed_based"
+    if used_delta is None:
+        if not allow_request_based_fallback or delta_request is None:
+            raise MetadataSyncError(
+                "start_sync.delta_sec_confirmed_based が None です"
+                "(OBS EventClient未接続、または録画開始確認イベントを規定時間内に"
+                "受信できなかったセッションの可能性)。"
+                + ("calibrateサブコマンドで手動同期してください。" if delta_request is None else
+                   " --allow-request-based-fallback を指定すると精度の劣る"
+                   "delta_sec_request_based で代替できますが、卒論の集計には"
+                   "非推奨です(request_basedはOBS内部のエンコーダ起動遅延を"
+                   "含まないため実際のズレを過小評価する傾向があります)。")
+            )
+        used_delta = delta_request
+        used_kind = "request_based"
+
+    first_sample = (meta.get("data_quality") or {}).get("first_sample") or {}
+    first_sample_pc_time = first_sample.get("pc_time_sec")
+    if first_sample_pc_time is None:
+        raise MetadataSyncError(
+            "data_quality.first_sample.pc_time_sec がメタデータにありません"
+            "(視線サンプルが一度も記録されなかったセッションの可能性)。"
+        )
+
+    offset_sec = used_delta + first_sample_pc_time
+
+    # 2026-07-29 の全10セッション較正実験で得られた delta_sec_confirmed_based の
+    # 実測レンジ(平均約0.0188s, SD約0.0025s)。3SD相当+若干のマージンを外れる
+    # 場合のみ警告する(誤検知を減らすため緩めのバンドにしている)。
+    KNOWN_MEAN_SEC = 0.0188
+    KNOWN_SD_SEC = 0.0025
+    within_expected_band = None
+    if used_kind == "confirmed_based":
+        within_expected_band = abs(used_delta - KNOWN_MEAN_SEC) <= (3 * KNOWN_SD_SEC + 0.005)
+
+    return {
+        "offset_sec": offset_sec,
+        "used_delta_kind": used_kind,
+        "used_delta_sec": used_delta,
+        "delta_sec_confirmed_based": delta_confirmed,
+        "delta_sec_request_based": delta_request,
+        "first_sample_pc_time_sec": first_sample_pc_time,
+        "start_sync_method": start_sync_method,
+        "within_expected_band": within_expected_band,
+        "meta_path": str(meta_path.resolve()),
+        "session_id": meta.get("session_id"),
+    }
 
 
 # ============================================================
 # calibrate サブコマンド: pygame での対話的オフセット調整
 # ============================================================
 
-def cmd_calibrate(args):
+def run_calibration_ui(csv_path: Path, video_path: Path, rows: list, times: list,
+                        initial_offset: float) -> "float | None":
+    """対話的にオフセットを目視調整するUIループ本体。
+
+    cmd_calibrate と auto-sync(--verify) の両方から呼ばれる共通部分。
+    保存(sidecar jsonへの書き込み)は行わない— 確定したoffset_secの値
+    (ENTERで確定)またはNone(ESCでキャンセル)を返すのみで、保存方法
+    (method文字列やsourceの記録)は呼び出し側の責務とする。
+    """
     import pygame  # calibrate/live でのみ必要なので遅延import
-
-    csv_path = args.csv_path
-    video_path = args.video_path
-
-    rows = load_rows(csv_path)
-    times = [r["t"] for r in rows]
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -181,8 +353,9 @@ def cmd_calibrate(args):
     if n_frames <= 0:
         sys.exit("エラー: 動画のフレーム数を取得できませんでした。")
 
-    offset = args.initial_offset if args.initial_offset is not None else (load_sync(video_path) or 0.0)
+    offset = initial_offset
     frame_idx = 0
+    confirmed_offset = None
 
     pygame.init()
     pygame.display.set_caption("Sync Calibration - " + video_path.name)
@@ -202,7 +375,7 @@ def cmd_calibrate(args):
     playing = False
     running = True
     print("操作方法: ←→=1フレーム移動  Shift+←→=1秒移動  ↑↓=オフセット±0.05s  "
-          "Shift+↑↓=オフセット±0.5s  SPACE=再生/停止  ENTER=保存して終了  ESC=保存せず終了")
+          "Shift+↑↓=オフセット±0.5s  SPACE=再生/停止  ENTER=確定して終了  ESC=キャンセルして終了")
 
     while running:
         dt = clock.tick(60) / 1000.0
@@ -216,8 +389,7 @@ def cmd_calibrate(args):
                 if event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key == pygame.K_RETURN:
-                    path = save_sync(video_path, csv_path, offset)
-                    print(f"オフセットを保存しました: {path} (offset_sec={offset:.3f})")
+                    confirmed_offset = offset
                     running = False
                 elif event.key == pygame.K_SPACE:
                     playing = not playing
@@ -261,7 +433,7 @@ def cmd_calibrate(args):
         hud = [
             f"video frame {frame_idx+1}/{n_frames}  video_t={t_video:.3f}s  {'PLAYING' if playing else 'PAUSED'}",
             f"offset_sec = {offset:+.3f}   ({status})",
-            "←→:1frame Shift+←→:1s  ↑↓:offset±0.05 Shift+↑↓:±0.5  SPACE:play ENTER:save ESC:cancel",
+            "←→:1frame Shift+←→:1s  ↑↓:offset±0.05 Shift+↑↓:±0.5  SPACE:play ENTER:確定 ESC:キャンセル",
         ]
         for i, line in enumerate(hud):
             txt = font.render(line, True, (255, 255, 0))
@@ -275,6 +447,104 @@ def cmd_calibrate(args):
 
     cap.release()
     pygame.quit()
+    return confirmed_offset
+
+
+def cmd_calibrate(args):
+    csv_path = args.csv_path
+    video_path = args.video_path
+
+    rows = load_rows(csv_path)
+    times = [r["t"] for r in rows]
+
+    if args.initial_offset is not None:
+        initial_offset = args.initial_offset
+    else:
+        existing = load_sync(video_path)
+        if existing is not None:
+            initial_offset = existing
+        else:
+            # 既存のsync.jsonが無い場合、可能ならメタデータの自動算出値を
+            # 初期値として使う(目視合わせをゼロからやり直す必要がなくなる)。
+            # あくまで初期値であり、そのまま気に入らなければ↑↓で調整すればよい。
+            meta_path = default_meta_path(csv_path)
+            try:
+                info = compute_offset_from_metadata(meta_path, allow_request_based_fallback=True)
+                initial_offset = info["offset_sec"]
+                print(
+                    f"[calibrate] 初期オフセットをメタデータから自動算出しました: "
+                    f"{initial_offset:+.4f}s ({info['used_delta_kind']})。"
+                    "そのまま良ければすぐにENTERで確定できます。"
+                )
+            except MetadataSyncError:
+                initial_offset = 0.0
+
+    offset = run_calibration_ui(csv_path, video_path, rows, times, initial_offset)
+    if offset is None:
+        print("[calibrate] キャンセルされました(保存していません)。")
+        return
+    path = save_sync(video_path, csv_path, offset, method="manual_visual")
+    print(f"[calibrate] オフセットを保存しました: {path} (offset_sec={offset:.3f})")
+
+
+def cmd_auto_sync(args):
+    """v4.1+ の *_meta.json に記録された start_sync
+    (Tobii最初のサンプル到達時刻とOBS録画開始確認イベント時刻の差分)から、
+    動画とCSVの同期オフセットを自動算出して保存する。
+
+    2026-07-29の全10セッション較正実験により、delta_sec_confirmed_basedを
+    基準にした同期は1フレーム(60fpsで約16.7ms)未満の誤差に収まることが
+    実証されているため、対話的なcalibrateでの目視合わせを代替できる。
+    --verify を付けると、算出したオフセットを初期値としてcalibrateと同じ
+    目視確認UIを一度だけ開き、必要なら微調整してから保存できる。
+    """
+    csv_path = args.csv_path
+    video_path = args.video_path
+    meta_path = args.meta if args.meta is not None else default_meta_path(csv_path)
+
+    try:
+        info = compute_offset_from_metadata(
+            meta_path, allow_request_based_fallback=args.allow_request_based_fallback
+        )
+    except MetadataSyncError as e:
+        sys.exit(f"エラー: 自動同期に失敗しました: {e}\n"
+                  "calibrateサブコマンドで手動同期するか、--meta で正しいメタデータJSONを指定してください。")
+
+    print(f"[auto-sync] メタデータ: {info['meta_path']}")
+    if info.get("session_id"):
+        print(f"[auto-sync] session_id: {info['session_id']}")
+    print(f"[auto-sync] 記録時のstart_sync.method: {info['start_sync_method']}")
+    print(f"[auto-sync] 使用した差分: {info['used_delta_kind']} = {info['used_delta_sec']:+.6f}s")
+    print(f"[auto-sync] first_sample.pc_time_sec = {info['first_sample_pc_time_sec']:.6f}s")
+    print(f"[auto-sync] 算出offset_sec = {info['offset_sec']:+.6f}s")
+    if info["within_expected_band"] is False:
+        print(
+            "[auto-sync] 警告: このセッションのdelta_sec_confirmed_based "
+            f"({info['delta_sec_confirmed_based']:.4f}s) は、2026-07-29の較正実験で"
+            "得られた期待レンジ(平均0.0188s±SD0.0025s近辺)から外れています。"
+            "OBS側の遅延や機材構成が較正時と異なる可能性があるため、"
+            "--verify での目視確認を強く推奨します。"
+        )
+
+    offset = info["offset_sec"]
+    method = f"metadata_{info['used_delta_kind']}"
+
+    if args.verify:
+        rows = load_rows(csv_path)
+        times = [r["t"] for r in rows]
+        final_offset = run_calibration_ui(csv_path, video_path, rows, times, initial_offset=offset)
+        if final_offset is None:
+            print("[auto-sync] 確認画面でキャンセルされたため、保存しませんでした。")
+            return
+        if abs(final_offset - offset) > 1e-6:
+            method += "_manually_adjusted"
+            print(f"[auto-sync] 目視確認により {offset:+.6f}s → {final_offset:+.6f}s に調整されました。")
+        else:
+            print("[auto-sync] 目視確認: 自動算出値のまま確定されました。")
+        offset = final_offset
+
+    path = save_sync(video_path, csv_path, offset, method=method, source=info)
+    print(f"[auto-sync] オフセットを保存しました: {path} (offset_sec={offset:+.6f}, method={method})")
 
 
 # ============================================================
@@ -459,14 +729,18 @@ def cmd_render(args):
 
     if args.offset is not None:
         offset = args.offset
+        sync_method_note = "CLI --offset (手動指定)"
     else:
-        offset = load_sync(video_path)
-        if offset is None:
+        sync_info = load_sync_full(video_path)
+        if sync_info is None:
             sys.exit(
                 "エラー: オフセットが未指定で、sync jsonも見つかりません。\n"
-                "先に `calibrate` サブコマンドを実行するか、--offset を指定してください。"
+                "先に `auto-sync`(推奨)または `calibrate` サブコマンドを実行するか、"
+                "--offset を指定してください。"
             )
-    print(f"[render] 使用するオフセット: {offset:+.3f} s")
+        offset = sync_info["offset_sec"]
+        sync_method_note = sync_info.get("method", "unknown")
+    print(f"[render] 使用するオフセット: {offset:+.3f} s (method={sync_method_note})")
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -632,7 +906,21 @@ def build_arg_parser():
     p = argparse.ArgumentParser(description="Tobii gaze CSV + 動画 合成ツール")
     sub = p.add_subparsers(dest="command", required=True)
 
-    p_cal = sub.add_parser("calibrate", help="動画とCSVの時刻オフセットを対話的に決定する")
+    p_auto = sub.add_parser(
+        "auto-sync",
+        help="(推奨) *_meta.json の start_sync.delta_sec_confirmed_based から同期オフセットを自動算出して保存する",
+    )
+    p_auto.add_argument("csv_path", type=Path)
+    p_auto.add_argument("video_path", type=Path)
+    p_auto.add_argument("--meta", type=Path, default=None,
+                         help="メタデータJSONのパス(既定: CSVと同名の *_meta.json)")
+    p_auto.add_argument("--verify", action="store_true",
+                         help="算出したオフセットを初期値として目視確認UIを開き、必要なら微調整してから保存する")
+    p_auto.add_argument("--allow-request-based-fallback", action="store_true",
+                         help="confirmed_basedが取得できない場合、精度の劣るrequest_basedで代替する(卒論集計には非推奨)")
+    p_auto.set_defaults(func=cmd_auto_sync)
+
+    p_cal = sub.add_parser("calibrate", help="動画とCSVの時刻オフセットを対話的に決定する(auto-syncが使えない場合の手動フォールバック)")
     p_cal.add_argument("csv_path", type=Path)
     p_cal.add_argument("video_path", type=Path)
     p_cal.add_argument("--initial-offset", type=float, default=None, help="初期オフセット(秒)")

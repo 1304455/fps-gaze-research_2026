@@ -11,3 +11,9 @@ fps-gaze-research/           # リポジトリのルート（プロジェクト�
 │   └── aoi_detector/           # AOI（関心領域）の判定・マッピング処理
 |   └── visualizer/             # データ可視化
 └── archive/                 # 過去のバージョンのコード（旧バージョン置き場）@@
+
+
+プログラムのコマンドメモ
+python .\src\gaze_estimation\tobii_capture_with_sync_flash_v4.py --skip-conditions-prompt --obs-password g2UhGsjGCG3Hy42H
+
+ python .\src\visualizer\gaze_visualizer_v3.py auto-sync .\data\raw\gaze_NA_1_default_20260828_140358.csv "C:\Users\kawalab\Videos\2026-08-28 14-04-19.mp4"
