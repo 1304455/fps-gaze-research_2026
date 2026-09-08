@@ -49,8 +49,8 @@
       "description": "画面中央の照準（クロスヘア）",
       "center_x": 0.500,
       "center_y": 0.500,
-      "radius_x": 0.015,
-      "radius_y": 0.025
+      "radius_x": 0.0351,
+      "radius_y": 0.0625
     },
     {
       "name": "health_armor",
