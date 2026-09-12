@@ -2,8 +2,8 @@
   "screen_name": "valorant_hud_1366x768",
   "coordinate_system": "normalized",
   "reference_resolution": {
-    "width": 1366,
-    "height": 768
+    "width": 3840,
+    "height": 2160
   },
   "note": "左上=(0,0)、右下=(1,1) の正規化座標です。minimap と crosshair は type=circle で定義しています。circle の radius_x/radius_y は正規化座標上の半径であり、基準解像度上で円形になるように設定しています。",
   "aois": [
@@ -49,8 +49,8 @@
       "description": "画面中央の照準（クロスヘア）",
       "center_x": 0.500,
       "center_y": 0.500,
-      "radius_x": 0.015,
-      "radius_y": 0.025
+      "radius_x": 0.0351,
+      "radius_y": 0.0625
     },
     {
       "name": "health_armor",
