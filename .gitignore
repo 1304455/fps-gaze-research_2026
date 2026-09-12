@@ -12,3 +12,4 @@ __pycache__/
 
 #被験者のデータなど（除外）
 data/
+repomix-output.xml
