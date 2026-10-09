@@ -41,7 +41,8 @@
 ## 3. 現在のパイプライン
 
 ```
-[計測] src/gaze_estimation/tobii_capture_with_sync_flash_v4.py   (SCRIPT_VERSION 4.1.0-start-sync)
+[較正] src/gaze_estimation/calibrate_validate.py  試合前に9点キャリブレーション＋検証 → data/raw/calib_<subject>_<日時>.json
+[計測] src/gaze_estimation/tobii_capture_with_sync_flash_v5.py   (SCRIPT_VERSION 5.0.0-eye-origin-pupil。v4.1 に眼位置z・瞳孔の列を末尾追加)
          + src/obs_controller_v2.py  (obsws-python / OBS WebSocket v5 で録画を自動開始・停止)
          → data/raw/gaze_<subject>_<trial>_<condition>_<YYYYMMDD_HHMMSS>.csv / _meta.json / ログ
          開始・停止は同一LAN上の別端末ブラウザから HTTP（既定 port 8765、token 付き）
@@ -49,20 +50,25 @@
          offset_sec = start_sync.delta_sec_confirmed_based + data_quality.first_sample.pc_time_sec
          gaze_time(pc_time_sec) = video_time + offset_sec
 [可視化] gaze_visualizer_v3.py render <csv> <mp4> --modes beeswarm scanpath heatmap
-[AOI解析] src/aoi_detector/aoi_analysis-ver2.py --input <csv> --aoi src/aoi_detector/valorant_hud_aoi_circular.json
-         → data/processed/aoi_result/*.csv
-[区間除外] 現状は動画を目視確認し、Excelで行を削除した *_proc.csv を手作業で作成（← 置き換え対象）
+[区間]   src/visualizer/segment_annotator.py <mp4> --session-base <session_base>
+         → data/annotations/<session_base>_segments.csv（動画時刻。行削除による区間除外は廃止）
+[AOI解析] src/aoi_detector/aoi_analysis-ver3.py --input <csv> --aoi ... --segments ... --sync <*_sync.json> --manifest ...
+         → data/processed/aoi_result/<session_base>/（I-DT 注視検出。ロジック本体は gaze_metrics.py / aoi_geometry.py）
+[集計]   src/analysis/aggregate_sessions.py --manifest data/sessions_manifest.csv → data/processed/aggregate/
+[台帳]   data/sessions_manifest.csv（実験者が記入。テンプレートは docs/templates/）
 ```
 
 ### 視線CSVの列（`FIELDNAMES`）
 `wall_timestamp_local, wall_timestamp_utc, pc_time_sec, device_time_stamp_us, system_time_stamp_us, left_x, left_y, right_x, right_y, center_x, center_y, left_gaze_point_validity, right_gaze_point_validity, gaze_missing`
+（v5 で末尾に追加）`left_gaze_origin_z_mm, right_gaze_origin_z_mm, left_gaze_origin_validity, right_gaze_origin_validity, left_pupil_diameter_mm, right_pupil_diameter_mm, left_pupil_validity, right_pupil_validity`
 
 - 座標は Tobii display area の正規化座標（左上 (0,0)、右下 (1,1)）。画面外では 0 未満・1 超もあり得る
 - 欠測は文字列 `"NaN"`。`gaze_missing` は `True/False` 文字列
 - `pc_time_sec` は **購読開始（gaze_subscribe_call）からの経過秒で、ホストのコールバック到着時刻**（`time.perf_counter()`）。デバイス取得時刻ではない
 
 ### AOI設定
-- `src/aoi_detector/valorant_hud_aoi_circular.json` が正。正規化座標。`minimap` と `crosshair` は `type: circle`（`radius_x/radius_y` は正規化半径）
+- `src/aoi_detector/valorant_hud_aoi_circular.json` が正。正規化座標。`minimap` と `crosshair` は `type: circle`（`radius_x/radius_y` は正規化半径。`radius_deg` で視角指定も可）
+- 同 JSON の `display`（物理寸法 mm・解像度）と `viewing_distance_mm` が視角換算の基準。`aoi_check.py` で各AOIの視角サイズを確認できる
 - 対象モニター：EIZO FlexScan EV2740X（27型、3840×2160、16:9）
 - AOIは「この画面・この解像度・16:9・このHUD設定」でしか成立しない。解像度や4:3ストレッチが変わるとHUD位置が変わる
 
@@ -115,9 +121,12 @@
 
 ## 7. 既知の問題（要約。詳細と対応方針は docs/IMPROVEMENT_PLAN.md）
 
+2026-10-09 時点の対応状況は IMPROVEMENT_PLAN.md 冒頭の「進捗」を参照。1・2・3・7・8 はコード上は対応済み、
+4・5・6 は計測・判断待ち（実機確認は docs/LAB_CHECKLIST.md）。
+
 1. **注視の定義が近似**：`aoi_analysis-ver2.py` の `fixation_count` は「同一AOIに属する連続サンプル区間（run）の数」で、注視検出をしていない。60 Hzの揺らぎでAOI境界付近の run が水増しされ、平均注視時間が短く出る（特にクロスヘア）
 2. **区間除外が手作業で行削除**：削除後に run を計算するため、死亡前と次ラウンドのサンプルが1つの run に連結されうる。欠測（瞬目）をまたいだ連結も同様
-3. **ゼロ件AOIが消える**（ver2）。メモ上は ver3 で修正済みだが、`aoi_analysis-ver3.py` はリポジトリに存在しない（ローカル未コミットの可能性）
+3. **ゼロ件AOIが消える**（ver2）。※ 調べたところ、リポジトリの `aoi_analysis-ver2.py` の中身は docstring が「ver.3」の改良版で、ゼロ件AOIの修正は入っていた（ファイル名だけ ver2 のままだった）。現在は `archive/aoi_analysis-ver2.py`
 4. **画面端の精度低下**：上下端のHUDを見ても領域外に判定される現象を観察済み。ゼロ件AOI（round_timer, enemy_team_status, ammo_weapon, credits）は「見ていない」のか「測れていない」のかを区別できていない
 5. **眼−画面距離を記録していない**：視角ベースのAOI・I-DT閾値の換算に必要
 6. **AOI設定の数値の根拠が不一致**：crosshair 半径 0.0351（=135 px）は「60 cmで半径2°」に相当し、実験条件の65 cmでは約1.85°。半径か直径かも明記されていない。`screen_name` が `1366x768` のまま

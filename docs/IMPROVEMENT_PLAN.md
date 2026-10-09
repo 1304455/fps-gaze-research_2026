@@ -19,6 +19,21 @@
 | T8 | 群間比較の統計スクリプト | P2 | なし |
 | T9 | 配布形態（exe化）の検討 | P2・保留 | — |
 
+### 進捗（2026-10-09 更新）
+
+| ID | 状態 | 実装 | 残っていること |
+|---|---|---|---|
+| T0 | コード対応済み | README からパスワード削除、`.gitignore`、`requirements*.txt`、`screen_name`、import フォールバック | **OBS パスワードの変更**（git履歴に残っている）、Windows の venv で `pip install` 確認 |
+| T1 | コード対応済み | `tobii_capture_with_sync_flash_v5.py`（列を末尾追加、NA 警告）、`docs/templates/sessions_manifest_template.csv` | 研究室PCで5分間テスト |
+| T2 | コード対応済み | `src/gaze_estimation/calibrate_validate.py`（`--check-only` / `--validate-only`） | Spark で SDK キャリブレーションが使えるかの確認、合否閾値の合意 |
+| T3 | コード対応済み | `src/visualizer/segment_annotator.py`、`aoi_analysis-ver3.py --compare-proc` | 予備実験1試合での注釈と旧方式との突き合わせ |
+| T4 | コード対応済み | `aoi_analysis-ver3.py` ＋ `gaze_metrics.py` / `aoi_geometry.py` | 決定事項1〜4の合意（現在は推奨値を既定値にしてパラメータ化）、実データでの I-DT 閾値の妥当性確認 |
+| T5 | 一部対応 | `aoi_check.py`（視角サイズ表、calib との比較、フレーム描画）、AOI JSON に `display` 追加、`radius_deg` 対応、台帳の解像度チェック | crosshair を `radius_deg` で定義し直すか（半径 2° にするなら正規化半径が 0.0351 → 0.0380 に変わる）の決定 |
+| T6 | コード対応済み | `src/analysis/aggregate_sessions.py`、`docs/templates/qc_criteria_template.json` | 除外基準の数値の合意（未合意の間はフラグを評価しない） |
+| T7 | 対応済み | `tests/`（56件） | — |
+| T8 | 未着手 | — | 主要比較と検定の合意が先 |
+| T9 | 保留 | — | — |
+
 着手順の推奨：T0 → T7の土台 → T4 → T3 → T1 → T2 → T5 → T6 → T8。
 T1・T2 は研究室PCでの実機確認が必要なので、コードだけ先に用意して確認をユーザーに依頼する。
 
