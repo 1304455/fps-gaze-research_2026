@@ -1,18 +1,28 @@
 {
-  "screen_name": "valorant_hud_1366x768",
+  "screen_name": "valorant_hud_3840x2160",
   "coordinate_system": "normalized",
   "reference_resolution": {
     "width": 3840,
     "height": 2160
   },
-  "note": "左上=(0,0)、右下=(1,1) の正規化座標です。minimap と crosshair は type=circle で定義しています。circle の radius_x/radius_y は正規化座標上の半径であり、基準解像度上で円形になるように設定しています。",
+  "display": {
+    "name": "EIZO FlexScan EV2740X (27型 3840x2160 16:9)",
+    "width_mm": 596.7,
+    "height_mm": 335.6,
+    "width_px": 3840,
+    "height_px": 2160,
+    "note": "表示領域の物理寸法。メーカー仕様値。研究室で一度、巻尺で実測して一致を確認すること"
+  },
+  "viewing_distance_mm": 650,
+  "viewing_distance_note": "radius_deg で定義したAOIを正規化半径に換算するときの設計上の眼−画面距離（実験条件 約65 cm）。I-DT の距離は解析パラメータ側で指定する",
+  "note": "左上=(0,0)、右下=(1,1) の正規化座標です。minimap と crosshair は type=circle で定義しています。circle の radius_x/radius_y は正規化座標上の半径であり、基準解像度上で円形になるように設定しています。crosshair の radius_x=0.0351（=135 px）は「60 cm で半径2°」由来の値で、65 cm では半径約1.85°に相当する。radius_deg で定義し直すかは未決定（aoi_check.py で視角を確認できる）。",
   "aois": [
     {
       "name": "minimap",
       "type": "circle",
       "description": "左上のミニマップ（味方・敵情報、位置、サイト表示）",
       "center_x": 0.1185,
-      "center_y": 0.2300,
+      "center_y": 0.23,
       "radius_x": 0.1098,
       "radius_y": 0.1953
     },
@@ -23,7 +33,7 @@
       "x_min": 0.205,
       "x_max": 0.448,
       "y_min": 0.015,
-      "y_max": 0.080
+      "y_max": 0.08
     },
     {
       "name": "round_timer",
@@ -31,7 +41,7 @@
       "description": "上部中央のラウンドタイマー",
       "x_min": 0.449,
       "x_max": 0.552,
-      "y_min": 0.010,
+      "y_min": 0.01,
       "y_max": 0.085
     },
     {
@@ -41,14 +51,14 @@
       "x_min": 0.553,
       "x_max": 0.796,
       "y_min": 0.015,
-      "y_max": 0.080
+      "y_max": 0.08
     },
     {
       "name": "crosshair",
       "type": "circle",
       "description": "画面中央の照準（クロスヘア）",
-      "center_x": 0.500,
-      "center_y": 0.500,
+      "center_x": 0.5,
+      "center_y": 0.5,
       "radius_x": 0.0351,
       "radius_y": 0.0625
     },

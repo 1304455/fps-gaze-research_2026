@@ -1,0 +1,12 @@
+{
+  "_comment": "aoi_analysis-ver3.py の解析パラメータ。値は gaze_metrics.DEFAULT_PARAMS と同じ（既定値の明示用）。研究上の定義に関わる値（★）はユーザー合意後に確定する。変更したら qc.json に記録される。",
+  "eye_screen_distance_mm": 650.0,
+  "eye_screen_distance_source": "fixed",
+  "idt_min_duration_ms": 100.0,
+  "idt_max_dispersion_deg": 1.0,
+  "max_gap_ms": 75.0,
+  "offscreen_in_denominator": true,
+  "duration_time_column": "pc_time_sec",
+  "segment_types": ["alive"],
+  "split_visits_at_gaps": true
+}
