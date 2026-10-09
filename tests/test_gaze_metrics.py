@@ -427,14 +427,38 @@ class TestParamsAndQc:
 
 
 class TestAoiCheck:
+    @staticmethod
+    def calib():
+        def pt(label, kind, x, y, acc, bx, by, aoi=None):
+            d = {"label": label, "kind": kind, "x": x, "y": y, "accuracy_deg": acc, "precision_rms_s2s_deg": 0.2,
+                 "left": {"bias_x_norm": bx, "bias_y_norm": by}, "right": {"bias_x_norm": bx, "bias_y_norm": by}}
+            if aoi:
+                d["aoi"] = aoi
+            return d
+        return {
+            "validation_points": [
+                pt("grid_0.5_0.5", "grid", 0.5, 0.5, 1.37, 0.0, 0.01),
+                pt("aoi_credits", "aoi", 0.96, 0.97, 0.67, 0.0, 0.02, "credits"),          # 下に 0.02 → 外
+                pt("aoi_ally_team_status", "aoi", 0.3265, 0.0475, 1.34, 0.06, 0.0, "ally_team_status"),  # 横ずれ → 内
+            ],
+            "summary": {"mean_accuracy_deg": 0.8},
+        }
+
     def test_size_table_flags(self, aois):
         from aoi_check import size_table
-        calib = {"validation_points": [{"kind": "aoi", "aoi": "credits", "accuracy_deg": 0.6}],
-                 "summary": {"mean_accuracy_deg": 0.8}}
-        t = size_table(aois, DISPLAY, 650, calib, 1.0).set_index("aoi")
+        t = size_table(aois, DISPLAY, 650, self.calib(), 1.0).set_index("aoi")
         assert t.loc["credits", "flag_below_min_size"]
-        assert t.loc["credits", "flag_half_below_accuracy"]  # 0.84/2 < 0.6
+        assert t.loc["credits", "flag_half_below_accuracy"]  # 0.84/2 < 0.67
+        assert t.loc["credits", "flag_center_gaze_outside"]
         assert t.loc["credits", "accuracy_source"] == "calib: このAOIの中心"
+        assert t.loc["credits", "bias_y_deg"] > 0  # 正は下方向
+        # 横長のバーは、横方向のずれなら誤差が大きくても中心を見た視線は中に入る
+        assert t.loc["ally_team_status", "flag_half_below_accuracy"]
+        assert not t.loc["ally_team_status", "flag_center_gaze_outside"]
+        # 中央のグリッド点と重複して省かれた crosshair は、近傍の検証点の値を使う
+        assert t.loc["crosshair", "accuracy_deg"] == 1.37
+        assert "grid_0.5_0.5" in t.loc["crosshair", "accuracy_source"]
+        # 検証点の無い AOI は全点平均で、方向の判定はしない
         assert t.loc["minimap", "accuracy_deg"] == 0.8
-        assert not t.loc["minimap", "flag_half_below_accuracy"]
+        assert t.loc["minimap", "flag_center_gaze_outside"] is None
         assert t.loc["crosshair", "width_deg"] / 2 == pytest.approx(1.85, abs=0.01)

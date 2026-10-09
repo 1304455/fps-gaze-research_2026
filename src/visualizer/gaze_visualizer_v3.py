@@ -71,6 +71,8 @@ if str(_PROJECT_ROOT) not in sys.path:
 import cv2
 import numpy as np
 
+from ui_fonts import japanese_font
+
 # ============================================================
 # CSV 読み込み(ver2 と共通)
 # ============================================================
@@ -361,7 +363,7 @@ def run_calibration_ui(csv_path: Path, video_path: Path, rows: list, times: list
     pygame.display.set_caption("Sync Calibration - " + video_path.name)
     win_w, win_h = min(vw, 1280), min(vh, 800)
     screen = pygame.display.set_mode((win_w, win_h), pygame.RESIZABLE)
-    font = pygame.font.SysFont(None, 24)
+    font = japanese_font(pygame, 24)  # SysFont(None) は日本語を表示できないため
     clock = pygame.time.Clock()
 
     def read_frame_at(idx):
@@ -850,7 +852,7 @@ def cmd_live(args):
     win_w = args.width or min(info.current_w, 1280)
     win_h = args.height or min(info.current_h, 800)
     screen = pygame.display.set_mode((win_w, win_h), pygame.RESIZABLE)
-    font = pygame.font.SysFont(None, 22)
+    font = japanese_font(pygame, 22)
     clock = pygame.time.Clock()
 
     paused = False

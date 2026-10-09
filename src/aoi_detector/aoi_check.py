@@ -23,13 +23,16 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 _THIS_DIR = Path(__file__).resolve().parent
 if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
-from aoi_geometry import aoi_extent_deg, find_overlapping_aois, get_display, load_aoi_config  # noqa: E402
+from aoi_geometry import (  # noqa: E402
+    aoi_extent_deg, aoi_mask, find_overlapping_aois, get_display, load_aoi_config, norm_to_deg,
+)
 
 _PROJECT_ROOT = _THIS_DIR.parent.parent
 DEFAULT_OUT_DIR = _PROJECT_ROOT / "data" / "processed" / "aoi_check"
@@ -37,21 +40,67 @@ COLORS_BGR = [(0, 0, 255), (0, 160, 0), (255, 0, 0), (0, 165, 255), (160, 0, 160
               (255, 255, 0), (0, 255, 255), (255, 0, 255), (128, 128, 255)]
 
 
+def aoi_center(a: dict) -> tuple[float, float]:
+    if a["type"] == "circle":
+        return a["center_x"], a["center_y"]
+    return (a["x_min"] + a["x_max"]) / 2, (a["y_min"] + a["y_max"]) / 2
+
+
+def _point_for_aoi(a: dict, points: list[dict], max_sep: float = 0.03) -> "tuple[dict | None, str]":
+    """
+    AOIに対応する検証点を返す。AOI中心の検証点が無い場合（中央のグリッド点と重複して省かれた
+    crosshair など）は、AOI中心から max_sep 以内の最も近い検証点を使う。
+    """
+    for p in points:
+        if p.get("kind") == "aoi" and p.get("aoi") == a["name"]:
+            return p, "calib: このAOIの中心"
+    cx, cy = aoi_center(a)
+    near = [p for p in points if abs(p["x"] - cx) < max_sep and abs(p["y"] - cy) < max_sep]
+    if near:
+        p = min(near, key=lambda q: (q["x"] - cx) ** 2 + (q["y"] - cy) ** 2)
+        return p, f"calib: 近傍の検証点（{p.get('label')}）"
+    return None, ""
+
+
+def _mean_bias(p: dict) -> "tuple[float | None, float | None]":
+    """左右眼の bias（正規化座標）の平均。片眼だけなら片眼の値。"""
+    bx = [p[e]["bias_x_norm"] for e in ("left", "right") if isinstance(p.get(e), dict) and p[e].get("bias_x_norm") is not None]
+    by = [p[e]["bias_y_norm"] for e in ("left", "right") if isinstance(p.get(e), dict) and p[e].get("bias_y_norm") is not None]
+    if not bx or not by:
+        return None, None
+    return float(np.mean(bx)), float(np.mean(by))
+
+
 def size_table(aois: list[dict], display, distance_mm: float, calib: "dict | None",
                min_size_deg: float) -> pd.DataFrame:
-    """AOIごとの視角サイズ表。calib があれば精度との比較列を付ける。"""
-    point_acc = {}
-    mean_acc = None
-    if calib:
-        for p in calib.get("validation_points", []):
-            if p.get("kind") == "aoi" and p.get("accuracy_deg") is not None:
-                point_acc[p["aoi"]] = p["accuracy_deg"]
-        mean_acc = (calib.get("summary") or {}).get("mean_accuracy_deg")
+    """
+    AOIごとの視角サイズ表。calib があれば精度との比較列を付ける。
+
+    flag_half_below_accuracy   ：短辺/2 < accuracy（誤差の大きさだけを見る保守的な基準。方向は見ない）
+    flag_center_gaze_outside   ：AOI中心を見たときの平均視線位置（中心 + 系統的なずれ bias）が
+                                 AOIの外に出る（ずれの方向も考慮した基準。横長のバーに横方向にずれても問題にならない）
+    """
+    points = (calib or {}).get("validation_points", [])
+    mean_acc = ((calib or {}).get("summary") or {}).get("mean_accuracy_deg")
     rows = []
     for a in aois:
         ext = aoi_extent_deg(a, display, distance_mm)
         min_dim = min(ext["width_deg"], ext["height_deg"])
-        acc = point_acc.get(a["name"], mean_acc)
+        p, source = _point_for_aoi(a, points) if calib else (None, "")
+        acc = p.get("accuracy_deg") if p else mean_acc
+        if p is None and acc is not None:
+            source = "calib: 全点平均"
+        bias_x = bias_y = bias_x_deg = bias_y_deg = inside = None
+        if p is not None:
+            bx, by = _mean_bias(p)
+            if bx is not None:
+                cx, cy = aoi_center(a)
+                gx, gy = cx + bx, cy + by
+                tx0, ty0 = norm_to_deg(cx, cy, display, distance_mm)
+                tx1, ty1 = norm_to_deg(gx, gy, display, distance_mm)
+                bias_x, bias_y = bx, by
+                bias_x_deg, bias_y_deg = float(tx1 - tx0), float(ty1 - ty0)
+                inside = bool(aoi_mask(np.array([gx]), np.array([gy]), a)[0])
         rows.append({
             "aoi": a["name"],
             "type": a["type"],
@@ -64,10 +113,15 @@ def size_table(aois: list[dict], display, distance_mm: float, calib: "dict | Non
             "height_mm": ext["height_mm"],
             "radius_source": a.get("radius_source", ""),
             "accuracy_deg": acc,
-            "accuracy_source": ("calib: このAOIの中心" if a["name"] in point_acc
-                                else ("calib: 全点平均" if acc is not None else "")),
+            "accuracy_source": source,
+            "precision_rms_s2s_deg": p.get("precision_rms_s2s_deg") if p else None,
+            "bias_x_norm": bias_x,
+            "bias_y_norm": bias_y,
+            "bias_x_deg": bias_x_deg,
+            "bias_y_deg": bias_y_deg,
             "flag_below_min_size": min_dim < min_size_deg,
             "flag_half_below_accuracy": (min_dim / 2 < acc) if acc is not None else None,
+            "flag_center_gaze_outside": (not inside) if inside is not None else None,
         })
     return pd.DataFrame(rows)
 
@@ -137,8 +191,8 @@ def main(argv=None):
 
     pd.set_option("display.width", 200)
     print(f"画面: {display.name}  {display.width_mm}×{display.height_mm} mm  眼−画面距離: {distance} mm")
-    cols = ["aoi", "type", "width_deg", "height_deg", "width_px", "height_px", "accuracy_deg",
-            "flag_below_min_size", "flag_half_below_accuracy"]
+    cols = ["aoi", "type", "width_deg", "height_deg", "accuracy_deg", "bias_x_deg", "bias_y_deg",
+            "flag_below_min_size", "flag_half_below_accuracy", "flag_center_gaze_outside"]
     print(table[cols].round(2).to_string(index=False))
     for a in aois:
         if a["type"] == "circle":
@@ -151,7 +205,12 @@ def main(argv=None):
         bad = table.loc[table["flag_half_below_accuracy"] == True, "aoi"].tolist()  # noqa: E712
         if bad:
             print(f"⚠ 測定精度に対して小さすぎるAOI（短辺/2 < accuracy）: {bad}")
+            print("  → 誤差の大きさだけで見た保守的な判定です。ずれの方向も考慮した判定は flag_center_gaze_outside。")
+        outside = table.loc[table["flag_center_gaze_outside"] == True, "aoi"].tolist()  # noqa: E712
+        if outside:
+            print(f"⚠ AOI中心を見ても平均視線位置がAOIの外に出るAOI: {outside}")
             print("  → これらのAOIの『注視0件』は「見ていない」と解釈できません。")
+        print("  ※ bias_y_deg は正が下方向。1回の検証の値なので、参加者・セッションごとに変わります。")
     overlaps = find_overlapping_aois(aois)
     if overlaps:
         print(f"⚠ 重なっているAOI: {overlaps}")

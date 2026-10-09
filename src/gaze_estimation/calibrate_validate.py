@@ -180,14 +180,16 @@ def judge(points: list[dict], max_mean_acc: float, max_hud_acc: float) -> dict:
 class TargetScreen:
     """選択ディスプレイ全面に枠なし窓を出し、注視点を描く。"""
 
-    def __init__(self, monitor, pygame_mod):
+    def __init__(self, monitor, pygame_mod, font_path: "str | None" = None):
         self.pg = pygame_mod
         os.environ["SDL_VIDEO_WINDOW_POS"] = f"{monitor.x},{monitor.y}"
         self.pg.init()
         self.w, self.h = monitor.width, monitor.height
         self.screen = self.pg.display.set_mode((self.w, self.h), self.pg.NOFRAME)
         self.pg.display.set_caption("calibrate_validate")
-        self.font = self.pg.font.SysFont(None, 48)
+        # SysFont(None) は日本語の字形を持たないため、日本語フォントを探して使う
+        from ui_fonts import japanese_font
+        self.font = japanese_font(self.pg, 48, font_path)
 
     def pump_quit(self) -> bool:
         for ev in self.pg.event.get():
@@ -342,6 +344,7 @@ def main(argv=None):
     p.add_argument("--window-ms", type=float, default=500.0, help="検証：集計に使う区間の長さ（ms）")
     p.add_argument("--max-mean-accuracy-deg", type=float, default=1.0, help="合格条件：全点平均 accuracy（案。要合意）")
     p.add_argument("--max-hud-accuracy-deg", type=float, default=1.5, help="合格条件：AOI中心の各点 accuracy（案。要合意）")
+    p.add_argument("--font", default=None, help="画面表示に使うフォントファイル（既定: Meiryo 等の日本語フォントを自動で探す）")
     args = p.parse_args(argv)
 
     try:
@@ -372,7 +375,7 @@ def main(argv=None):
     monitor = monitors[idx - 1]
 
     display_area = display_area_dict(eyetracker)
-    screen = TargetScreen(monitor, pygame)
+    screen = TargetScreen(monitor, pygame, args.font)
     calibration = None
     try:
         if not args.validate_only:
