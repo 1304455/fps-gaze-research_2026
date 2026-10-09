@@ -1,0 +1,19 @@
+{
+  "_comment": "aggregate_sessions.py の除外基準。数値は研究上の判断なので、合意するまで null（評価しない）のままにする。下の _proposal は計画段階の案で、そのままでは使われない。",
+  "min_valid_rate_in_segments": null,
+  "min_analysis_time_sec": null,
+  "require_sync_confirmed_based": null,
+  "require_sync_within_expected_band": null,
+  "require_calibration_passed": null,
+  "require_resolution_ok": null,
+  "max_eye_distance_deviation_mm": null,
+  "_proposal": {
+    "min_valid_rate_in_segments": 0.7,
+    "min_analysis_time_sec": 300,
+    "require_sync_confirmed_based": true,
+    "require_sync_within_expected_band": true,
+    "require_calibration_passed": true,
+    "require_resolution_ok": true,
+    "max_eye_distance_deviation_mm": 80
+  }
+}
