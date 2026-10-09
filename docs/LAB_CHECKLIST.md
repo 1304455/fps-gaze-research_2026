@@ -43,6 +43,34 @@ python .\src\aoi_detector\aoi_check.py --aoi .\src\aoi_detector\valorant_hud_aoi
 ```
 - [ ] 「測定精度に対して小さすぎるAOI」の一覧を確認する
 
+### 2b. 頭部位置ガイドと較正の改良（2026-10-09 追加）
+
+`calibrate_validate.py` は、キャリブレーションの前に頭部位置ガイドを表示するようになった
+（省略は `--skip-position-guide`、ガイドだけなら `--position-only`）。
+
+```powershell
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --position-only
+```
+- [ ] **左右の向きの確認**：頭をゆっくり自分の右へ動かすと、画面の円と＋印も右へ動く
+      （逆なら以降すべてのコマンドに `--flip-x` を付け、結果を Claude に伝える）
+- [ ] 前後に動くと距離の線が動き、650 mm 付近で緑の範囲に入る
+- [ ] `data\raw\headpos_TEST_*.json` に `head_position.recorded`（x/y/z）が保存される
+
+較正点の位置の比較（同じ人・同じ姿勢で、順番を入れ替えて各2回）：
+```powershell
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.1
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.05
+```
+- [ ] 上下のバー（ally/enemy_team_status, health_armor, abilities）の accuracy と `aoi_check.py` の
+      `bias_y_deg` を比べる。0.05 の方が上下端のずれ（上のバーは下向き、下のバーは上向き）が小さければ 0.05 を採用
+- [ ] 誤差が 1.5° を超えた点は自動で1回測り直される。`summary.retried_points` と各点の `first_attempt` を確認
+
+前回の位置に合わせる（2回目以降のセッション）：
+```powershell
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --reference (Get-ChildItem .\data\raw\calib_TEST_*.json | Select-Object -Last 1).FullName
+```
+- [ ] 上下の位置も判定に加わり、前回とほぼ同じ姿勢で OK になる
+
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
 ```powershell

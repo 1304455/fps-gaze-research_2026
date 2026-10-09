@@ -29,6 +29,8 @@ Tobii Pro SDK によるキャリブレーション＋検証ツール（IMPROVEME
 python .\\src\\gaze_estimation\\calibrate_validate.py --check-only
 # 2) キャリブレーション＋検証
 python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01
+# 2b) 前回と同じ頭の位置に合わせてから較正する／較正点を画面端に寄せる
+python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01 --reference .\\data\\raw\\calib_P01_20261020_135500.json --calib-margin 0.05
 # 3) キャリブレーションが使えない場合は検証のみ（Eye Tracker Manager で較正した後に）
 python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01 --validate-only
 """
@@ -55,11 +57,10 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-SCRIPT_VERSION = "1.0.0"
+SCRIPT_VERSION = "1.1.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
-CALIBRATION_POINTS = [(0.5, 0.5), (0.1, 0.1), (0.5, 0.1), (0.9, 0.1), (0.1, 0.5),
-                      (0.9, 0.5), (0.1, 0.9), (0.5, 0.9), (0.9, 0.9)]
+DEFAULT_CALIB_MARGIN = 0.1
 GRID_VALIDATION_POINTS = [(0.1, 0.1), (0.5, 0.1), (0.9, 0.1), (0.1, 0.5), (0.5, 0.5),
                           (0.9, 0.5), (0.1, 0.9), (0.5, 0.9), (0.9, 0.9)]
 
@@ -67,6 +68,33 @@ GRID_VALIDATION_POINTS = [(0.1, 0.1), (0.5, 0.1), (0.9, 0.1), (0.1, 0.5), (0.5, 
 # ---------------------------------------------------------------------------
 # 計算（SDK・画面に依存しない部分。テスト対象）
 # ---------------------------------------------------------------------------
+
+def calibration_points(margin: float = DEFAULT_CALIB_MARGIN) -> list[tuple[float, float]]:
+    """
+    9点キャリブレーションの点（中央から開始）。margin は画面端からの距離（正規化）。
+    HUD の上下のバーは y≈0.05 / 0.94 にあり、既定の 0.1 では較正点の外側（外挿）になる。
+    """
+    if not 0.0 < margin < 0.5:
+        raise ValueError(f"--calib-margin は 0 より大きく 0.5 未満にしてください: {margin}")
+    lo, hi = margin, 1.0 - margin
+    return [(0.5, 0.5), (lo, lo), (0.5, lo), (hi, lo), (lo, 0.5), (hi, 0.5), (lo, hi), (0.5, hi), (hi, hi)]
+
+
+def points_to_retry(points: list[dict], threshold_deg: float) -> list[int]:
+    """再試行する検証点の index（データなし、または accuracy が閾値超）。"""
+    return [i for i, p in enumerate(points) if p.get("accuracy_deg") is None or p["accuracy_deg"] > threshold_deg]
+
+
+def merge_retry(first: dict, retry: dict) -> dict:
+    """
+    再試行の結果を採用し、1回目の値を first_attempt として残す（どちらも記録し、選別を隠さない）。
+    """
+    keep = {k: first.get(k) for k in ("accuracy_deg", "precision_rms_s2s_deg", "n_samples_window")}
+    for e in ("left", "right"):
+        if isinstance(first.get(e), dict):
+            keep[f"{e}_bias_x_norm"] = first[e].get("bias_x_norm")
+            keep[f"{e}_bias_y_norm"] = first[e].get("bias_y_norm")
+    return {**retry, "retried": True, "first_attempt": keep}
 
 def display_point_to_ucs(x: float, y: float, display_area: dict) -> np.ndarray:
     """
@@ -189,7 +217,10 @@ class TargetScreen:
         self.pg.display.set_caption("calibrate_validate")
         # SysFont(None) は日本語の字形を持たないため、日本語フォントを探して使う
         from ui_fonts import japanese_font
-        self.font = japanese_font(self.pg, 48, font_path)
+        # 文字の大きさは画面の高さに合わせる（4K で 48px 前後）
+        size = max(24, self.h // 45)
+        self.font = japanese_font(self.pg, size, font_path)
+        self.small_font = japanese_font(self.pg, max(18, int(size * 0.7)), font_path)
 
     def pump_quit(self) -> bool:
         for ev in self.pg.event.get():
@@ -241,6 +272,10 @@ class TargetScreen:
         self.pg.quit()
 
 
+class _PositionOnlyDone(Exception):
+    """--position-only で、位置ガイドの記録後に以降の手順を飛ばすための内部例外。"""
+
+
 class SampleCollector:
     """SDK のコールバックで受けたサンプルを、ホスト時刻付きで溜める。"""
 
@@ -268,12 +303,13 @@ def display_area_dict(eyetracker) -> dict:
     }
 
 
-def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float) -> dict:
+def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float,
+                    points: "list[tuple[float, float]] | None" = None) -> dict:
     calib = tr.ScreenBasedCalibration(eyetracker)
     calib.enter_calibration_mode()
     point_status = []
     try:
-        for x, y in CALIBRATION_POINTS:
+        for x, y in (points or calibration_points()):
             if not screen.target(x, y, shrink_sec):
                 raise KeyboardInterrupt
             status = calib.collect_data(x, y)
@@ -290,23 +326,39 @@ def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float) -> 
 
 
 def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], display_area: dict,
-                   shrink_sec: float, settle_ms: float, window_ms: float) -> list[dict]:
+                   shrink_sec: float, settle_ms: float, window_ms: float,
+                   retry_threshold_deg: "float | None" = None) -> list[dict]:
+    """
+    各検証点を順に提示して指標を出す。retry_threshold_deg を指定すると、閾値を超えた点
+    （またはデータが取れなかった点）を最後にもう1回だけ提示し直す（1回目の値も記録する）。
+    1点だけ極端に悪い場合は、多くが「その点を見ていなかった（瞬き・次の点の予測など）」ことによる。
+    """
     collector = SampleCollector()
     eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA, collector.callback, as_dictionary=True)
+
+    def measure(tgt: dict) -> dict:
+        if not screen.target(tgt["x"], tgt["y"], shrink_sec):
+            raise KeyboardInterrupt
+        onset = time.perf_counter()
+        if not screen.hold((settle_ms + window_ms) / 1000.0 + 0.05):
+            raise KeyboardInterrupt
+        win = collector.between(onset + settle_ms / 1000.0, onset + (settle_ms + window_ms) / 1000.0)
+        m = point_metrics(win, (tgt["x"], tgt["y"]), display_area)
+        acc = m["accuracy_deg"]
+        print(f"  {tgt['label']:<28} accuracy={'—' if acc is None else f'{acc:.2f}°'}  "
+              f"n={m['n_samples_window']}")
+        return {**tgt, **m}
+
     results = []
     try:
         for tgt in targets:
-            if not screen.target(tgt["x"], tgt["y"], shrink_sec):
-                raise KeyboardInterrupt
-            onset = time.perf_counter()
-            if not screen.hold((settle_ms + window_ms) / 1000.0 + 0.05):
-                raise KeyboardInterrupt
-            win = collector.between(onset + settle_ms / 1000.0, onset + (settle_ms + window_ms) / 1000.0)
-            m = point_metrics(win, (tgt["x"], tgt["y"]), display_area)
-            results.append({**tgt, **m})
-            acc = m["accuracy_deg"]
-            print(f"  {tgt['label']:<28} accuracy={'—' if acc is None else f'{acc:.2f}°'}  "
-                  f"n={m['n_samples_window']}")
+            results.append(measure(tgt))
+        if retry_threshold_deg is not None:
+            idx = points_to_retry(results, retry_threshold_deg)
+            if idx:
+                print(f"  --- 誤差が {retry_threshold_deg}° を超えた {len(idx)} 点をもう一度測ります ---")
+                for i in idx:
+                    results[i] = merge_retry(results[i], measure(targets[i]))
     finally:
         eyetracker.unsubscribe_from(tr.EYETRACKER_GAZE_DATA, collector.callback)
     return results
@@ -344,6 +396,19 @@ def main(argv=None):
     p.add_argument("--window-ms", type=float, default=500.0, help="検証：集計に使う区間の長さ（ms）")
     p.add_argument("--max-mean-accuracy-deg", type=float, default=1.0, help="合格条件：全点平均 accuracy（案。要合意）")
     p.add_argument("--max-hud-accuracy-deg", type=float, default=1.5, help="合格条件：AOI中心の各点 accuracy（案。要合意）")
+    p.add_argument("--calib-margin", type=float, default=DEFAULT_CALIB_MARGIN,
+                   help="キャリブレーション点の画面端からの距離（正規化。既定 0.1。HUD の上下端を較正範囲に入れるなら 0.05）")
+    p.add_argument("--retry-threshold-deg", type=float, default=None,
+                   help="検証で accuracy がこの値を超えた点を1回だけ測り直す（既定: --max-hud-accuracy-deg と同じ）")
+    p.add_argument("--no-retry", action="store_true", help="検証点の測り直しをしない")
+    p.add_argument("--position-only", action="store_true", help="頭部位置ガイドだけを表示して記録する")
+    p.add_argument("--skip-position-guide", action="store_true", help="キャリブレーション前の頭部位置ガイドを省略する")
+    p.add_argument("--target-distance-mm", type=float, default=650.0, help="頭部位置ガイド：目標の眼−トラッカー距離（mm）")
+    p.add_argument("--tolerance-z-mm", type=float, default=30.0, help="頭部位置ガイド：距離の許容幅（±mm）")
+    p.add_argument("--tolerance-x-mm", type=float, default=30.0, help="頭部位置ガイド：左右の許容幅（±mm）")
+    p.add_argument("--reference", type=Path, default=None,
+                   help="頭部位置ガイド：前回の calib_*.json / headpos_*.json の位置に合わせる（上下も判定する）")
+    p.add_argument("--flip-x", action="store_true", help="頭部位置ガイドの左右の向きを反転する（向きが逆だった場合）")
     p.add_argument("--font", default=None, help="画面表示に使うフォントファイル（既定: Meiryo 等の日本語フォントを自動で探す）")
     args = p.parse_args(argv)
 
@@ -374,28 +439,62 @@ def main(argv=None):
     idx = int(input(f"測定対象ディスプレイの番号 (1-{len(monitors)}): ").strip())
     monitor = monitors[idx - 1]
 
+    from head_position_guide import reference_from_calib, run_position_guide
+
+    reference = None
+    if args.reference:
+        with open(args.reference, "r", encoding="utf-8") as f:
+            reference = reference_from_calib(json.load(f))
+        if reference is None:
+            print(f"⚠ 警告: {args.reference} に頭部位置の記録がありません。距離と左右だけで合わせます。")
+    calib_points = calibration_points(args.calib_margin)
+    retry_thr = None if args.no_retry else (args.retry_threshold_deg or args.max_hud_accuracy_deg)
+
     display_area = display_area_dict(eyetracker)
     screen = TargetScreen(monitor, pygame, args.font)
     calibration = None
+    head_position = None
     try:
+        if not args.skip_position_guide or args.position_only:
+            head_position = run_position_guide(
+                tr, eyetracker, screen, target_z_mm=args.target_distance_mm, tol_z_mm=args.tolerance_z_mm,
+                tol_x_mm=args.tolerance_x_mm, reference=reference, flip_x=args.flip_x)
+            rec = head_position["recorded"]
+            print(f"頭部位置: 距離 {rec['z_mid_mm']} mm / 左右 {rec['x_mid_mm']} mm / 上下 {rec['y_mid_mm']} mm "
+                  f"（{'範囲内' if head_position['ok'] else '範囲外のまま確定'}）")
+        if args.position_only:
+            raise _PositionOnlyDone
         if not args.validate_only:
             if not screen.message("キャリブレーション：白い円の中心の黒い点を見続けてください\n"
                                   "（何かキーを押すと開始 / ESC で中止）"):
                 return
-            calibration = run_calibration(tr, eyetracker, screen, args.shrink_sec)
+            calibration = run_calibration(tr, eyetracker, screen, args.shrink_sec, calib_points)
             print(f"キャリブレーション結果: {calibration['status']}")
         if not screen.message("検証：同じように点を見続けてください\n（何かキーを押すと開始 / ESC で中止）"):
             return
         points = run_validation(tr, eyetracker, screen, targets, display_area,
-                                args.shrink_sec, args.settle_ms, args.window_ms)
+                                args.shrink_sec, args.settle_ms, args.window_ms, retry_thr)
     except KeyboardInterrupt:
         print("中止しました（保存しません）。")
         return
+    except _PositionOnlyDone:
+        points = None
     finally:
         screen.close()
 
-    verdict = judge(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.position_only:
+        out = args.output_dir / f"headpos_{args.subject}_{stamp}.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump({"script": {"name": _THIS_FILE.name, "version": SCRIPT_VERSION},
+                       "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                       "subject_id": args.subject, "head_position": head_position}, f, ensure_ascii=False, indent=2)
+        print(f"保存しました: {out}")
+        return
+
+    verdict = judge(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg)
+    verdict["retried_points"] = [p["label"] for p in points if p.get("retried")]
     out = args.output_dir / f"calib_{args.subject}_{stamp}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     record = {
@@ -410,12 +509,15 @@ def main(argv=None):
         "os": platform.platform(),
         "aoi_config": str(args.aoi) if args.aoi else None,
         "parameters": {"settle_ms": args.settle_ms, "window_ms": args.window_ms, "shrink_sec": args.shrink_sec,
-                       "calibration_points": CALIBRATION_POINTS},
+                       "calib_margin": args.calib_margin, "calibration_points": calib_points,
+                       "retry_threshold_deg": retry_thr},
+        "head_position": head_position,
         "definitions": {
             "accuracy_deg": "眼位置(gaze_origin)から注視点(gaze_point, UCS)へのベクトルと、目標点へのベクトルの角度差の平均",
             "precision_rms_s2s_deg": "連続サンプルの視線ベクトル間の角度差の二乗平均平方根",
             "binocular": "左右眼の値の平均（片眼のみ有効ならその眼の値）",
             "bias_norm": "正規化座標上の平均ずれ（注視点平均 − 目標）。正の y は下方向",
+            "retried": "1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、2回目の値を採用。1回目は first_attempt に残す",
         },
         "calibration": calibration if calibration else {"status": "not_performed (--validate-only)"},
         "validation_points": points,
@@ -424,7 +526,8 @@ def main(argv=None):
     with open(out, "w", encoding="utf-8") as f:
         json.dump(record, f, ensure_ascii=False, indent=2)
     print(f"\n全体平均 accuracy: {verdict['mean_accuracy_deg']}  precision: {verdict['mean_precision_rms_s2s_deg']}")
-    print(f"判定: {'合格' if verdict['passed'] else '不合格'}  HUD点の不合格: {verdict['hud_points_failed']}")
+    print(f"判定: {'合格' if verdict['passed'] else '不合格'}  HUD点の不合格: {verdict['hud_points_failed']}"
+          f"  測り直した点: {verdict['retried_points']}")
     print(f"保存しました: {out}")
 
 
