@@ -8,5 +8,5 @@
   "offscreen_in_denominator": true,
   "duration_time_column": "pc_time_sec",
   "segment_types": ["alive"],
-  "split_visits_at_gaps": true
+  "visit_merge_max_gap_ms": 200.0
 }

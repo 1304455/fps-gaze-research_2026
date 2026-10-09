@@ -298,12 +298,15 @@ def main(argv=None):
             "offscreen": "有効サンプルのうち center_x/center_y が [0,1] の外",
             "gaze_pct": "区間内で sample_aoi がそのAOIの有効サンプル数 / 分母。分母は区間内の有効サンプル数"
                         + ("（offscreen を含む）" if params["offscreen_in_denominator"] else "（offscreen を除く）"),
-            "fixation": "I-DT。区間ごと・欠測ギャップ（max_gap_ms 超）で分割した系列の内部で検出。"
+            "missing_gap": "欠測の長さ = 連続する有効サンプルの時刻差 − 名目サンプル間隔。座標の補間はしない",
+            "fixation": "I-DT。区間ごと・欠測（max_gap_ms 超）で分割した系列の内部で検出（注視は瞬目をまたがない）。"
                         "分散 = (max θx − min θx) + (max θy − min θy)。θ は画面中央正面・距離 D を仮定した視角",
             "fixation_duration": "最後のサンプル時刻 − 最初のサンプル時刻 + 名目サンプル間隔",
             "fixation_aoi": "注視の重心（サンプル座標の平均）が入る AOI",
-            "visit": "同一AOIに割り当てられた連続注視のまとまり。区間をまたがない"
-                     + ("。欠測ギャップもまたがない" if params["split_visits_at_gaps"] else ""),
+            "visit": "同一AOIに割り当てられた連続注視のまとまり。区間をまたがない。"
+                     f"間の欠測が {params['visit_merge_max_gap_ms']:g} ms 以下（瞬目相当）なら同じ訪問の続きとみなし"
+                     "再訪に数えない。それを超える欠測（追跡ロス）では訪問を切る",
+            "transition": "連続する2訪問のAOIが異なるとき1回。区間をまたがず、間の欠測が visit_merge_max_gap_ms を超える場合も数えない",
             "revisit_count": "区間ごとに max(訪問数 − 1, 0) を求め、セッションでは合計",
             "fixations_per_min": "注視数 / (区間内の有効サンプル数 × 名目サンプル間隔 / 60)",
             "ttff_sec": "区間の開始から、そのAOIへの最初の注視の開始まで。注視が無い区間は NaN かつ ttff_censored=True",
@@ -324,6 +327,7 @@ def main(argv=None):
             "nominal_sample_interval_sec": res["sample_dt"],
             "n_fixations": int(len(res["fixations"])),
             "offscreen": gm.offscreen_summary(samples),
+            "missing_gaps": res["gap_summary"],
             "time_base_comparison": gm.time_base_comparison(df),
             "eye_distance_from_tracker": gm.eye_distance_summary(df),
         },

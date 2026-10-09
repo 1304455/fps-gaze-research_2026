@@ -190,22 +190,61 @@ class TestIdt:
 # ---------------------------------------------------------------------------
 
 class TestSplitting:
-    def test_long_gap_splits_fixation_and_visit(self, aois):
-        # 9サンプル（150 ms）の欠測 → 有効サンプル間 166 ms > 75 ms
+    def test_blink_splits_fixation_but_not_visit(self, aois):
+        # 9サンプル（150 ms）の欠測（瞬目相当）：注視は分割するが、同じ訪問の続き（再訪にしない）
         pts = hold(CROSSHAIR, 20) + [None] * 9 + hold(CROSSHAIR, 20)
         res = run(pts, aois)
         assert len(res["fixations"]) == 2
         ms = res["metrics_session"].set_index("aoi")
         assert ms.loc["crosshair", "fixation_count"] == 2
+        assert ms.loc["crosshair", "visit_count"] == 1
+        assert ms.loc["crosshair", "revisit_count"] == 0
+        f = res["fixations"]
+        assert f["gap_before_prev_ms"].iloc[1] == pytest.approx(150.0, abs=0.01)
+        assert res["gap_summary"]["counts"]["75-150ms"] == 1
+
+    def test_long_gap_splits_visit(self, aois):
+        # 18サンプル（300 ms）の欠測 > 200 ms：追跡ロスとして訪問を切る
+        pts = hold(CROSSHAIR, 20) + [None] * 18 + hold(CROSSHAIR, 20)
+        res = run(pts, aois)
+        ms = res["metrics_session"].set_index("aoi")
         assert ms.loc["crosshair", "visit_count"] == 2
         assert ms.loc["crosshair", "revisit_count"] == 1
+        assert res["gap_summary"]["n_same_aoi_visit_breaks_by_long_gap"] == 1
 
-    def test_gap_does_not_merge_visits_when_split_disabled(self, aois):
+    def test_visit_merge_threshold_boundary(self, aois):
+        # 12サンプル = 200 ms ちょうどはつなぐ、13サンプル = 216.7 ms は切る
+        for n_missing, visits in ((12, 1), (13, 2)):
+            res = run(hold(CROSSHAIR, 20) + [None] * n_missing + hold(CROSSHAIR, 20), aois)
+            assert res["metrics_session"].set_index("aoi").loc["crosshair", "visit_count"] == visits
+
+    def test_visit_merge_disabled(self, aois):
         pts = hold(CROSSHAIR, 20) + [None] * 9 + hold(CROSSHAIR, 20)
-        res = run(pts, aois, split_visits_at_gaps=False)
-        ms = res["metrics_session"].set_index("aoi")
-        assert ms.loc["crosshair", "fixation_count"] == 2
-        assert ms.loc["crosshair", "visit_count"] == 1
+        res = run(pts, aois, visit_merge_max_gap_ms=0.0)
+        assert res["metrics_session"].set_index("aoi").loc["crosshair", "revisit_count"] == 1
+
+    def test_transition_across_blink_is_counted(self, aois):
+        # 瞬目中に視線が移った場合は遷移として数える。長い欠測をまたぐ場合は数えない
+        res = run(hold(MINIMAP, 20) + [None] * 9 + hold(CROSSHAIR, 20), aois)
+        tl = res["transitions_long"].set_index(["from_aoi", "to_aoi"])["count"]
+        assert tl[("minimap", "crosshair")] == 1
+        res = run(hold(MINIMAP, 20) + [None] * 30 + hold(CROSSHAIR, 20), aois)
+        tl = res["transitions_long"].set_index(["from_aoi", "to_aoi"])["count"]
+        assert tl[("minimap", "crosshair")] == 0
+
+    def test_bridge_requires_every_gap_short(self, aois):
+        # 注視 → 100 ms 欠測 → 注視にならない3サンプル → 300 ms 欠測 → 同じAOIの注視：切る
+        pts = hold(CROSSHAIR, 20) + [None] * 6 + hold(EMPTY, 3) + [None] * 18 + hold(CROSSHAIR, 20)
+        res = run(pts, aois)
+        assert res["metrics_session"].set_index("aoi").loc["crosshair", "visit_count"] == 2
+        pts = hold(CROSSHAIR, 20) + [None] * 6 + hold(EMPTY, 3) + [None] * 6 + hold(CROSSHAIR, 20)
+        res = run(pts, aois)
+        assert res["metrics_session"].set_index("aoi").loc["crosshair", "visit_count"] == 1
+
+    def test_max_gap_is_missing_duration(self, aois):
+        # 欠測の長さ = 時刻差 − 1サンプル間隔。4サンプル欠測 = 66.7 ms <= 75 は分割しない、5サンプル = 83 ms は分割
+        assert len(run(hold(CROSSHAIR, 20) + [None] * 4 + hold(CROSSHAIR, 20), aois)["fixations"]) == 1
+        assert len(run(hold(CROSSHAIR, 20) + [None] * 5 + hold(CROSSHAIR, 20), aois)["fixations"]) == 2
 
     def test_short_gap_keeps_one_fixation(self, aois):
         # 2サンプル（33 ms）の欠測 → 有効サンプル間 50 ms <= 75 ms

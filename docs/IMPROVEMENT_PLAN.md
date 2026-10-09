@@ -27,10 +27,10 @@
 | T1 | コード対応済み | `tobii_capture_with_sync_flash_v5.py`（列を末尾追加、NA 警告）、`docs/templates/sessions_manifest_template.csv` | 研究室PCで5分間テスト |
 | T2 | コード対応済み | `src/gaze_estimation/calibrate_validate.py`（`--check-only` / `--validate-only`） | Spark で SDK キャリブレーションが使えるかの確認、合否閾値の合意 |
 | T3 | コード対応済み | `src/visualizer/segment_annotator.py`、`aoi_analysis-ver3.py --compare-proc` | 予備実験1試合での注釈と旧方式との突き合わせ |
-| T4 | コード対応済み | `aoi_analysis-ver3.py` ＋ `gaze_metrics.py` / `aoi_geometry.py` | 決定事項1〜4の合意（現在は推奨値を既定値にしてパラメータ化）、実データでの I-DT 閾値の妥当性確認 |
+| T4 | コード対応済み | `aoi_analysis-ver3.py` ＋ `gaze_metrics.py` / `aoi_geometry.py`。決定事項1（瞬目の扱い）は合意済みで反映 | 決定事項2〜4の合意（現在は推奨値を既定値にしてパラメータ化）、実データでの I-DT 閾値と 200 ms の妥当性確認 |
 | T5 | 一部対応 | `aoi_check.py`（視角サイズ表、calib との比較、フレーム描画）、AOI JSON に `display` 追加、`radius_deg` 対応、台帳の解像度チェック | crosshair を `radius_deg` で定義し直すか（半径 2° にするなら正規化半径が 0.0351 → 0.0380 に変わる）の決定 |
 | T6 | コード対応済み | `src/analysis/aggregate_sessions.py`、`docs/templates/qc_criteria_template.json` | 除外基準の数値の合意（未合意の間はフラグを評価しない） |
-| T7 | 対応済み | `tests/`（56件） | — |
+| T7 | 対応済み | `tests/`（61件） | — |
 | T8 | 未着手 | — | 主要比較と検定の合意が先 |
 | T9 | 保留 | — | — |
 
@@ -167,6 +167,8 @@ T1・T2 は研究室PCでの実機確認が必要なので、コードだけ先�
 
 **ユーザーに確認が必要な決定事項**（実装前に選択肢と推奨を提示すること）
 1. 欠測ギャップの上限（注視を分割する閾値）
+   → 2026-10-09 合意：瞬目は再訪に数えない。注視の分割は 75 ms 超（座標補間なし）、訪問・遷移は 200 ms 以下の欠測をまたいでつなぐ。
+     予備実験の欠測長の分布（qc.json `missing_gaps`）で 200 ms が妥当か確認する
 2. `offscreen` を Gaze % の分母に含めるか
 3. 眼−画面距離を固定値（650 mm）にするか、セッションの実測中央値にするか（推奨：主解析は固定値、実測値は感度分析）
 4. 時刻の基準：`pc_time_sec`（ホスト到着時刻）のばらつきを `system_time_stamp_us` と比較し、注視時間の計算にどちらを使うか。まず両者の差分の標準偏差を実データで出して判断材料にする（同期は `pc_time_sec` のまま）

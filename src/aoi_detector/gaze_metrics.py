@@ -10,7 +10,8 @@
 3. 注視検出（I-DT） 区間ごと、かつ欠測ギャップで系列を分割した「チャンク」の内部でだけ検出する。
                    分散 D = (max θx − min θx) + (max θy − min θy) [deg]
 4. AOI割り当て     サンプル単位（Gaze % 用）と注視単位（注視の重心で判定）
-5. 訪問・遷移      同一AOIへの連続注視を1訪問にまとめる。区間・チャンクをまたがない
+5. 訪問・遷移      同一AOIへの連続注視を1訪問にまとめる。区間はまたがない。
+                   瞬目程度の欠測（visit_merge_max_gap_ms 以下）はまたいでつなぐ（再訪にしない）
 
 用語（卒論でもこの語を使う）
 --------------------------
@@ -62,7 +63,8 @@ DEFAULT_PARAMS = {
     # I-DT（Salvucci & Goldberg, 2000）
     "idt_min_duration_ms": 100.0,
     "idt_max_dispersion_deg": 1.0,
-    # 有効サンプル間の時間差がこれを超えたら系列を分割する（決定事項1）
+    # 欠測の長さ（連続する有効サンプルの時刻差 − 名目サンプル間隔）がこれを超えたら、
+    # 注視検出の系列を分割する（＝注視は欠測をまたがない）。Tobii I-VT の gap fill-in の既定値と同じ
     "max_gap_ms": 75.0,
     # Gaze % の分母に offscreen（有効だが画面外）を含めるか（決定事項2）
     "offscreen_in_denominator": True,
@@ -70,8 +72,11 @@ DEFAULT_PARAMS = {
     "duration_time_column": "pc_time_sec",
     # 主解析に使う区間の種類
     "segment_types": ["alive"],
-    # 欠測ギャップをまたぐ同一AOIの連続注視を別訪問として数えるか
-    "split_visits_at_gaps": True,
+    # 訪問・遷移の判定で「つながっている」とみなす欠測の長さの上限 [ms]（2026-10-09 合意）。
+    # 瞬目（blink）による欠測でこれ以下なら、前後の注視を同じ訪問の続き（同一AOIなら再訪にしない）、
+    # 別AOIなら遷移として扱う。超える欠測は追跡ロスとみなし、訪問・遷移を切る。
+    # 座標の補間はしない（注視は max_gap_ms で分割したまま）。0 にすると欠測で必ず切る
+    "visit_merge_max_gap_ms": 200.0,
 }
 
 
@@ -203,11 +208,12 @@ def assign_segments(t_sync: np.ndarray, segments: pd.DataFrame) -> np.ndarray:
 # 3. 注視検出（I-DT）
 # ---------------------------------------------------------------------------
 
-def build_chunks(t: np.ndarray, valid: np.ndarray, segment_id: np.ndarray, max_gap_sec: float) -> np.ndarray:
+def build_chunks(t: np.ndarray, valid: np.ndarray, segment_id: np.ndarray, max_gap_sec: float,
+                 sample_dt: float) -> np.ndarray:
     """
     注視検出の単位（チャンク）を作る。有効かつ区間内のサンプルだけを時刻順に見て、
-    区間が変わる、または有効サンプル間の時間差が max_gap_sec を超えるところで分割する。
-    対象外のサンプルは NaN。
+    区間が変わる、または欠測の長さ（有効サンプル間の時刻差 − sample_dt）が max_gap_sec を
+    超えるところで分割する。対象外のサンプルは NaN。
     """
     chunk = np.full(len(t), np.nan)
     idx = np.flatnonzero(valid & ~np.isnan(segment_id))
@@ -217,9 +223,74 @@ def build_chunks(t: np.ndarray, valid: np.ndarray, segment_id: np.ndarray, max_g
     tt = t[idx]
     ss = segment_id[idx]
     new_chunk = np.ones(len(idx), dtype=bool)
-    new_chunk[1:] = (ss[1:] != ss[:-1]) | ((tt[1:] - tt[:-1]) > max_gap_sec + _TIME_EPS)
+    new_chunk[1:] = (ss[1:] != ss[:-1]) | ((tt[1:] - tt[:-1] - sample_dt) > max_gap_sec + _TIME_EPS)
     chunk[idx] = np.cumsum(new_chunk) - 1
     return chunk
+
+
+def chunk_gap_before(t: np.ndarray, chunk: np.ndarray, segment_id: np.ndarray, sample_dt: float) -> np.ndarray:
+    """
+    各チャンクの直前の欠測の長さ [sec]（直前チャンクの最後の有効サンプル〜このチャンクの最初の
+    有効サンプルの時刻差 − sample_dt）。区間の最初のチャンクは inf（前とつながらない）。
+    """
+    m = ~np.isnan(chunk)
+    if not m.any():
+        return np.array([])
+    g = pd.DataFrame({"c": chunk[m].astype(int), "t": t[m], "s": segment_id[m]}).groupby("c")
+    first_t = g["t"].min().to_numpy()
+    last_t = g["t"].max().to_numpy()
+    seg = g["s"].first().to_numpy()
+    n = len(first_t)
+    gap = np.full(n, np.inf)
+    same_seg = seg[1:] == seg[:-1]
+    gap[1:] = np.where(same_seg, first_t[1:] - last_t[:-1] - sample_dt, np.inf)
+    return gap
+
+
+def link_fixations(fixations: pd.DataFrame, gap_before: np.ndarray, merge_max_gap_sec: float) -> pd.DataFrame:
+    """
+    時刻順の各注視について、直前の注視と「つながっている」か（linked_to_prev）を判定する。
+    同じ区間内で、間にある欠測がすべて merge_max_gap_sec 以下ならつながっている（瞬目は訪問を切らない）。
+    gap_before_prev_ms は、直前の注視との間で最も長い欠測（同じチャンクなら 0）。
+    """
+    f = fixations.sort_values("start_sync_sec", kind="stable").reset_index(drop=True)
+    n = len(f)
+    linked = np.zeros(n, dtype=bool)
+    max_gap = np.full(n, np.nan)
+    for k in range(1, n):
+        if f.at[k, "segment_id"] != f.at[k - 1, "segment_id"]:
+            continue
+        c0, c1 = int(f.at[k - 1, "chunk_id"]), int(f.at[k, "chunk_id"])
+        g = 0.0 if c0 == c1 else float(np.max(gap_before[c0 + 1:c1 + 1]))
+        max_gap[k] = g * 1000.0
+        linked[k] = g <= merge_max_gap_sec + _TIME_EPS
+    f["gap_before_prev_ms"] = max_gap
+    f["linked_to_prev"] = linked
+    return f
+
+
+def gap_summary(t: np.ndarray, valid: np.ndarray, segment_id: np.ndarray, sample_dt: float) -> dict:
+    """
+    区間内の欠測（瞬目・追跡ロス）の長さの分布。max_gap_ms / visit_merge_max_gap_ms の
+    妥当性を実データで確認するための材料。
+    """
+    idx = np.flatnonzero(valid & ~np.isnan(segment_id))
+    idx = idx[np.argsort(t[idx], kind="stable")]
+    same = segment_id[idx][1:] == segment_id[idx][:-1]
+    miss = (np.diff(t[idx]) - sample_dt)[same] * 1000.0
+    miss = miss[miss > sample_dt * 500.0]  # 1サンプルの半分より長いものだけを欠測とみなす
+    miss = np.round(miss, 3)
+    # 右閉区間（75 ms ちょうどは "<=75ms"、150 ms ちょうどは "75-150ms"）
+    edges = np.array([75, 150, 200, 300, 500])
+    labels = ["<=75ms", "75-150ms", "150-200ms", "200-300ms", "300-500ms", ">500ms"]
+    counts = np.bincount(np.searchsorted(edges, miss, side="left"), minlength=len(labels))
+    return {
+        "n_gaps": int(len(miss)),
+        "counts": {lab: int(c) for lab, c in zip(labels, counts)},
+        "median_ms": float(np.median(miss)) if len(miss) else None,
+        "p90_ms": float(np.quantile(miss, 0.9)) if len(miss) else None,
+        "definition": "欠測の長さ = 連続する有効サンプルの時刻差 − 名目サンプル間隔（区間内のみ）",
+    }
 
 
 def _dispersion(ax: np.ndarray, ay: np.ndarray) -> float:
@@ -310,7 +381,7 @@ def analyze_session(df: pd.DataFrame, aois: list[dict], display: DisplayGeometry
     # 3. 注視検出
     ax, ay = norm_to_deg(x, y, display, distance_mm)
     max_gap = params["max_gap_ms"] / 1000.0
-    chunk = build_chunks(t, valid, segment_id, max_gap)
+    chunk = build_chunks(t, valid, segment_id, max_gap, sample_dt)
     fixation_id = np.full(len(df), np.nan)
     fix_rows = []
     for cid in np.unique(chunk[~np.isnan(chunk)]):
@@ -382,9 +453,14 @@ def analyze_session(df: pd.DataFrame, aois: list[dict], display: DisplayGeometry
         "sample_class": sample_class,
     })
 
-    # 5. 訪問・遷移
-    visits = build_visits(fixations, params["split_visits_at_gaps"])
-    transitions_long, transitions_matrix = build_transitions(visits, cats, params["split_visits_at_gaps"])
+    # 5. 訪問・遷移（瞬目程度の欠測はまたいでつなぐ。座標の補間はしない）
+    gap_before = chunk_gap_before(t, chunk, segment_id, sample_dt)
+    fixations = link_fixations(fixations, gap_before, params["visit_merge_max_gap_ms"] / 1000.0)
+    visits = build_visits(fixations)
+    transitions_long, transitions_matrix = build_transitions(visits, cats)
+    prev_aoi = fixations["aoi"].shift()
+    same_aoi_breaks = int(((fixations["aoi"] == prev_aoi) & ~fixations["linked_to_prev"]
+                           & fixations["gap_before_prev_ms"].notna()).sum())
 
     by_segment = metrics_by_segment(samples, fixations, visits, segments, cats, params, sample_dt)
     session = metrics_session(by_segment, cats)
@@ -400,27 +476,32 @@ def analyze_session(df: pd.DataFrame, aois: list[dict], display: DisplayGeometry
         "transitions_matrix": transitions_matrix,
         "sample_dt": sample_dt,
         "categories": cats,
+        "gap_summary": {
+            **gap_summary(t, valid, segment_id, sample_dt),
+            "n_fixation_pairs_bridged_over_gap": int((fixations["linked_to_prev"]
+                                                      & (fixations["gap_before_prev_ms"] > 0)).sum()),
+            "n_same_aoi_visit_breaks_by_long_gap": same_aoi_breaks,
+            "note": "n_same_aoi_visit_breaks_by_long_gap は、同じAOIへの連続注視が visit_merge_max_gap_ms を"
+                    "超える欠測で別訪問になった数（＝欠測由来の再訪の上限）",
+        },
     }
 
 
-def build_visits(fixations: pd.DataFrame, split_at_gaps: bool) -> pd.DataFrame:
+def build_visits(fixations: pd.DataFrame) -> pd.DataFrame:
     """
     同一AOIに割り当てられた連続注視を1訪問にまとめる。
-    区間（segment_id）をまたがない。split_at_gaps=True ならチャンク（欠測ギャップ）もまたがない。
+    直前の注視とつながっていない（linked_to_prev=False：区間の先頭、または長い欠測の後）なら新しい訪問。
     """
-    cols = ["visit_id", "segment_id", "chunk_id", "aoi", "start_sync_sec", "end_sync_sec",
-            "n_fixations", "total_fixation_duration_sec"]
+    cols = ["visit_id", "segment_id", "aoi", "start_sync_sec", "end_sync_sec",
+            "n_fixations", "total_fixation_duration_sec", "linked_to_prev"]
     if fixations.empty:
         return pd.DataFrame(columns=cols)
     f = fixations.sort_values("start_sync_sec", kind="stable").reset_index(drop=True)
-    group_keys = ["segment_id", "chunk_id"] if split_at_gaps else ["segment_id"]
-    new_visit = (f["aoi"] != f["aoi"].shift())
-    for k in group_keys:
-        new_visit |= (f[k] != f[k].shift())
+    new_visit = (f["aoi"] != f["aoi"].shift()) | ~f["linked_to_prev"].astype(bool)
     f["visit_id"] = new_visit.cumsum() - 1
     visits = f.groupby("visit_id", sort=True).agg(
         segment_id=("segment_id", "first"),
-        chunk_id=("chunk_id", "first"),
+        linked_to_prev=("linked_to_prev", "first"),
         aoi=("aoi", "first"),
         start_sync_sec=("start_sync_sec", "min"),
         end_sync_sec=("end_sync_sec", "max"),
@@ -430,19 +511,17 @@ def build_visits(fixations: pd.DataFrame, split_at_gaps: bool) -> pd.DataFrame:
     return visits[cols]
 
 
-def build_transitions(visits: pd.DataFrame, cats: list[str], split_at_gaps: bool):
+def build_transitions(visits: pd.DataFrame, cats: list[str]):
     """
-    連続する2訪問の AOI 間遷移を数える（注視ベース）。区間をまたがない。
-    split_at_gaps=True なら欠測ギャップもまたがない。全ペアを 0 埋めで網羅する。
+    連続する2訪問の AOI 間遷移を数える（注視ベース）。後の訪問が前とつながっている
+    （同じ区間で、間の欠測が visit_merge_max_gap_ms 以下）場合だけ数える。全ペアを 0 埋めで網羅する。
     """
     pairs = pd.DataFrame(
         [(a, b) for a in cats for b in cats if a != b], columns=["from_aoi", "to_aoi"],
     )
     if len(visits) >= 2:
         v = visits.sort_values("start_sync_sec", kind="stable").reset_index(drop=True)
-        same = v["segment_id"].iloc[1:].to_numpy() == v["segment_id"].iloc[:-1].to_numpy()
-        if split_at_gaps:
-            same &= v["chunk_id"].iloc[1:].to_numpy() == v["chunk_id"].iloc[:-1].to_numpy()
+        same = v["linked_to_prev"].iloc[1:].to_numpy().astype(bool)
         tr = pd.DataFrame({
             "from_aoi": v["aoi"].iloc[:-1].to_numpy()[same],
             "to_aoi": v["aoi"].iloc[1:].to_numpy()[same],

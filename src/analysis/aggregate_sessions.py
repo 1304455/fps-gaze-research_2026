@@ -52,7 +52,7 @@ DEFAULT_QC_CRITERIA = {
 # 全セッションで一致していなければならない解析パラメータ（違うと合算できない）
 PARAMS_MUST_MATCH = [
     "idt_min_duration_ms", "idt_max_dispersion_deg", "max_gap_ms", "offscreen_in_denominator",
-    "duration_time_column", "segment_types", "split_visits_at_gaps", "eye_screen_distance_source",
+    "duration_time_column", "segment_types", "visit_merge_max_gap_ms", "eye_screen_distance_source",
 ]
 
 

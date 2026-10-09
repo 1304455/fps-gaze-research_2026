@@ -72,6 +72,9 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 - [ ] 同じ区間で、`gaze_pct` が旧版（archive\aoi_analysis-ver2.py を `_proc.csv` に適用）とほぼ一致する
 - [ ] `qc.json` の `time_base_comparison.interval_difference_sd_ms` を控える（決定事項4の材料）
 - [ ] `fixations.csv` の `duration_sec` の分布を見る（I-DT の閾値が自分のデータで妥当かの確認）
+- [ ] `qc.json` の `data_quality.missing_gaps` を見る。瞬目は通常 100〜300 ms 程度なので、
+      `200-300ms` の件数が多ければ `visit_merge_max_gap_ms` を 300 にするか検討する。
+      `n_same_aoi_visit_breaks_by_long_gap`（長い欠測で切れた同一AOIの訪問数）が再訪数に対して大きくないかも確認
 
 ## 5. フレーム上の AOI 位置（T5）
 
