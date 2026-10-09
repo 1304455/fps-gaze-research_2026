@@ -3,6 +3,9 @@
 venv/
 env/
 
+.venv-check/
+
+
 # Pythonのキャッシュファイル（除外）
 __pycache__/
 *.pyc
