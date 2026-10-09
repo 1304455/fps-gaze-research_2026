@@ -13,3 +13,10 @@ __pycache__/
 #被験者のデータなど（除外）
 data/
 repomix-output.xml
+
+# OBS WebSocket の接続設定（パスワードを含む。テンプレートだけ管理する）
+obs_config*.json
+!docs/templates/obs_config_template.json
+
+# テスト
+.pytest_cache/

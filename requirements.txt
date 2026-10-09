@@ -1,7 +1,20 @@
+# 計測・解析の実行に必要なパッケージ（研究室PC：Windows + Python）
+# 本実験前のコード凍結時に、研究室PCで pip freeze > requirements-lock.txt を取ってバージョンを固定する
+#
+# 注意：keyboard パッケージは使用禁止（OS全体のキーボードフックは Vanguard の誤検知リスクがあり、
+#       被験者アカウントの BAN につながりうる。計測の開始・停止は別端末ブラウザからの HTTP で行う）
+
+# 計測
 tobii-research
 pygame
-opencv-python
-numpy
 screeninfo
-keyboard
-pywin32
+obsws-python
+pywin32; sys_platform == "win32"
+
+# 解析・可視化
+numpy
+pandas
+opencv-python
+
+# AOI のライブオーバーレイ（aoi_overlay*.py。試合中には起動しない）
+PyQt5
