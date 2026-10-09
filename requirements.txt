@@ -1,20 +1,21 @@
-# �v���E��͂̎��s�ɕK�v�ȃp�b�P�[�W�i������PC�FWindows + Python�j
-# �{�����O�̃R�[�h�������ɁA������PC�� pip freeze > requirements-lock.txt ������ăo�[�W�������Œ肷��
+# -*- coding: utf-8 -*-
+# 計測・解析の実行に必要なパッケージ（研究室PC：Windows + Python）
+# 本実験前のコード凍結時に、研究室PCで pip freeze > requirements-lock.txt を取ってバージョンを固定する
 #
-# ���ӁFkeyboard �p�b�P�[�W�͎g�p�֎~�iOS�S�̂̃L�[�{�[�h�t�b�N�� Vanguard �̌댟�m���X�N������A
-#       �팱�҃A�J�E���g�� BAN �ɂȂ��肤��B�v���̊J�n�E��~�͕ʒ[���u���E�U����� HTTP �ōs���j
+# 注意：keyboard パッケージは使用禁止（OS全体のキーボードフックは Vanguard の誤検知リスクがあり、
+#       被験者アカウントの BAN につながりうる。計測の開始・停止は別端末ブラウザからの HTTP で行う）
 
-# �v��
+# 計測
 tobii-research
 pygame
 screeninfo
 obsws-python
 pywin32; sys_platform == "win32"
 
-# ��́E����
+# 解析・可視化
 numpy
 pandas
 opencv-python
 
-# AOI �̃��C�u�I�[�o�[���C�iaoi_overlay*.py�B�������ɂ͋N�����Ȃ��j
+# AOI のライブオーバーレイ（aoi_overlay*.py。試合中には起動しない）
 PyQt5

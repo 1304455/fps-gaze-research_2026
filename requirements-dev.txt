@@ -1,2 +1,3 @@
-# ŠJ”­EƒeƒXƒg—pipython -m pytestj
+# -*- coding: utf-8 -*-
+# é–‹ç™ºãƒ»ãƒ†ã‚¹ãƒˆç”¨ï¼ˆpython -m pytestï¼‰
 pytest
