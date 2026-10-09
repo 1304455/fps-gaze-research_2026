@@ -57,7 +57,7 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-SCRIPT_VERSION = "1.1.0"
+SCRIPT_VERSION = "1.2.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
@@ -85,16 +85,36 @@ def points_to_retry(points: list[dict], threshold_deg: float) -> list[int]:
     return [i for i, p in enumerate(points) if p.get("accuracy_deg") is None or p["accuracy_deg"] > threshold_deg]
 
 
+def _compact(attempt: dict) -> dict:
+    keep = {k: attempt.get(k) for k in ("accuracy_deg", "precision_rms_s2s_deg", "n_samples_window")}
+    for e in ("left", "right"):
+        if isinstance(attempt.get(e), dict):
+            for k in ("accuracy_deg", "valid_rate", "bias_x_norm", "bias_y_norm"):
+                keep[f"{e}_{k}"] = attempt[e].get(k)
+    return keep
+
+
+def data_quality_key(attempt: dict) -> tuple:
+    """
+    測り直しの採否に使うデータ品質（大きいほど良い）。accuracy（結果そのもの）は使わない。
+    1. 両眼のうち低い方の有効率（片眼を見失っていない方が良い）
+    2. precision（RMS sample-to-sample）が小さい方（視線が安定している＝目標を注視していた）
+    """
+    rates = [attempt[e].get("valid_rate") or 0.0 for e in ("left", "right") if isinstance(attempt.get(e), dict)]
+    prec = attempt.get("precision_rms_s2s_deg")
+    return (min(rates) if rates else 0.0, -(prec if prec is not None else float("inf")))
+
+
 def merge_retry(first: dict, retry: dict) -> dict:
     """
-    再試行の結果を採用し、1回目の値を first_attempt として残す（どちらも記録し、選別を隠さない）。
+    1回目と測り直しのうち、データ品質（data_quality_key）が良い方を採用する。
+    accuracy の良い方を選ぶと結果に都合のよい選別になるため、accuracy は判断に使わない。
+    品質が同じなら測り直しを採用する。両方の値を残し、どちらを採ったかを selected_attempt に記録する。
     """
-    keep = {k: first.get(k) for k in ("accuracy_deg", "precision_rms_s2s_deg", "n_samples_window")}
-    for e in ("left", "right"):
-        if isinstance(first.get(e), dict):
-            keep[f"{e}_bias_x_norm"] = first[e].get("bias_x_norm")
-            keep[f"{e}_bias_y_norm"] = first[e].get("bias_y_norm")
-    return {**retry, "retried": True, "first_attempt": keep}
+    use_first = data_quality_key(first) > data_quality_key(retry)
+    chosen = first if use_first else retry
+    return {**chosen, "retried": True, "selected_attempt": "first" if use_first else "retry",
+            "first_attempt": _compact(first), "retry_attempt": _compact(retry)}
 
 def display_point_to_ucs(x: float, y: float, display_area: dict) -> np.ndarray:
     """
@@ -517,7 +537,8 @@ def main(argv=None):
             "precision_rms_s2s_deg": "連続サンプルの視線ベクトル間の角度差の二乗平均平方根",
             "binocular": "左右眼の値の平均（片眼のみ有効ならその眼の値）",
             "bias_norm": "正規化座標上の平均ずれ（注視点平均 − 目標）。正の y は下方向",
-            "retried": "1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、2回目の値を採用。1回目は first_attempt に残す",
+            "retried": "1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、データ品質（両眼の有効率の低い方 → precision）"
+                       "が良い方を採用（accuracy は採否に使わない）。両方を first_attempt / retry_attempt に残す",
         },
         "calibration": calibration if calibration else {"status": "not_performed (--validate-only)"},
         "validation_points": points,

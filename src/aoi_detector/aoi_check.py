@@ -126,6 +126,34 @@ def size_table(aois: list[dict], display, distance_mm: float, calib: "dict | Non
     return pd.DataFrame(rows)
 
 
+def display_geometry_check(calib: dict, display, tolerance: float = 0.01) -> "dict | None":
+    """
+    アイトラッカーに設定されている画面（Eye Tracker Manager のディスプレイ設定。calib の
+    display_area_ucs_mm）と、AOI JSON の display（視角換算に使う物理寸法）を比べる。
+    どちらかが実物と違うと、視線→画面座標の対応や視角換算が系統的にずれる。
+    tilt_deg は画面の後ろへの傾き（鉛直からの角度。上端が下端よりユーザーから遠いと正）。
+    """
+    da = (calib or {}).get("display_area_ucs_mm")
+    if not da:
+        return None
+    tl, tr_, bl = (np.asarray(da[k], dtype=float) for k in ("top_left", "top_right", "bottom_left"))
+    width = float(np.linalg.norm(tr_ - tl))
+    height = float(np.linalg.norm(tl - bl))
+    tilt = float(np.degrees(np.arctan2(tl[2] - bl[2], tl[1] - bl[1])))
+    dw = width / display.width_mm - 1.0
+    dh = height / display.height_mm - 1.0
+    return {
+        "tracker_width_mm": width,
+        "tracker_height_mm": height,
+        "tracker_tilt_deg": tilt,
+        "aoi_json_width_mm": display.width_mm,
+        "aoi_json_height_mm": display.height_mm,
+        "width_diff_ratio": dw,
+        "height_diff_ratio": dh,
+        "size_mismatch": bool(abs(dw) > tolerance or abs(dh) > tolerance),
+    }
+
+
 def draw_aois_on_frame(frame_path: Path, aois: list[dict], out_path: Path) -> None:
     """フレーム画像に AOI を描画する（画像の解像度に合わせて正規化座標を拡大）。"""
     import cv2
@@ -211,6 +239,15 @@ def main(argv=None):
             print(f"⚠ AOI中心を見ても平均視線位置がAOIの外に出るAOI: {outside}")
             print("  → これらのAOIの『注視0件』は「見ていない」と解釈できません。")
         print("  ※ bias_y_deg は正が下方向。1回の検証の値なので、参加者・セッションごとに変わります。")
+    geo = display_geometry_check(calib, display) if calib else None
+    if geo:
+        print(f"画面の設定（トラッカー）: {geo['tracker_width_mm']:.1f}×{geo['tracker_height_mm']:.1f} mm、"
+              f"後ろへの傾き {geo['tracker_tilt_deg']:.1f}°  ／ AOI JSON: {geo['aoi_json_width_mm']}×{geo['aoi_json_height_mm']} mm")
+        if geo["size_mismatch"]:
+            print(f"⚠ トラッカーの画面設定と AOI JSON の寸法が 1% 以上違います（幅 {geo['width_diff_ratio']:+.1%}、"
+                  f"高さ {geo['height_diff_ratio']:+.1%}）。")
+        print("  → 画面の表示領域（黒枠の内側）の幅・高さと傾きを実測し、Eye Tracker Manager のディスプレイ設定と"
+              " AOI JSON の display の両方と一致しているか確認してください。")
     overlaps = find_overlapping_aois(aois)
     if overlaps:
         print(f"⚠ 重なっているAOI: {overlaps}")

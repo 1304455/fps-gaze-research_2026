@@ -462,3 +462,16 @@ class TestAoiCheck:
         assert t.loc["minimap", "accuracy_deg"] == 0.8
         assert t.loc["minimap", "flag_center_gaze_outside"] is None
         assert t.loc["crosshair", "width_deg"] / 2 == pytest.approx(1.85, abs=0.01)
+
+    def test_display_geometry_check(self):
+        from aoi_check import display_geometry_check
+        # 研究室PCの calib に記録されていた値（607×341 mm、上端が 117 mm 奥 → 約20°）
+        calib = {"display_area_ucs_mm": {
+            "top_left": [-310.62, 348.03, 119.84], "top_right": [296.39, 348.03, 119.84],
+            "bottom_left": [-310.62, 27.18, 3.06]}}
+        g = display_geometry_check(calib, DISPLAY)
+        assert g["tracker_width_mm"] == pytest.approx(607.0, abs=0.1)
+        assert g["tracker_height_mm"] == pytest.approx(341.4, abs=0.1)
+        assert g["tracker_tilt_deg"] == pytest.approx(20.0, abs=0.1)
+        assert g["size_mismatch"]  # 596.7 mm とは 1.7% 違う
+        assert display_geometry_check({}, DISPLAY) is None

@@ -68,12 +68,21 @@ class TestCalibrationProcedure:
         pts = [{"label": "a", "accuracy_deg": 0.5}, {"label": "b", "accuracy_deg": 3.36},
                {"label": "c", "accuracy_deg": None}]
         assert points_to_retry(pts, 1.5) == [1, 2]
-        first = {"label": "b", "accuracy_deg": 3.36, "precision_rms_s2s_deg": 0.2, "n_samples_window": 30,
-                 "left": {"bias_x_norm": 0.01, "bias_y_norm": 0.08}}
-        m = merge_retry(first, {"label": "b", "accuracy_deg": 0.7})
-        assert m["accuracy_deg"] == 0.7 and m["retried"]
+        def att(acc, prec, lrate, rrate=1.0):
+            return {"label": "b", "accuracy_deg": acc, "precision_rms_s2s_deg": prec, "n_samples_window": 30,
+                    "left": {"valid_rate": lrate, "bias_y_norm": 0.08}, "right": {"valid_rate": rrate}}
+        # 品質が同じなら測り直しを採用
+        m = merge_retry(att(3.36, 0.2, 1.0), att(0.7, 0.2, 1.0))
+        assert m["accuracy_deg"] == 0.7 and m["retried"] and m["selected_attempt"] == "retry"
         assert m["first_attempt"]["accuracy_deg"] == 3.36
         assert m["first_attempt"]["left_bias_y_norm"] == 0.08
+        # 研究室PCの実例：測り直しで左眼を見失い（有効率 0.67）、precision も悪化 → 1回目を採用
+        m = merge_retry(att(1.71, 0.29, 1.0), att(2.74, 0.48, 0.67))
+        assert m["selected_attempt"] == "first" and m["accuracy_deg"] == 1.71
+        assert m["retry_attempt"]["accuracy_deg"] == 2.74
+        # accuracy が良くても、データ品質が悪い方は採らない（結果で選別しない）
+        m = merge_retry(att(2.0, 0.2, 1.0), att(0.5, 0.9, 1.0))
+        assert m["selected_attempt"] == "first"
 
 
 def test_position_guide_screen_runs_and_records(monkeypatch):

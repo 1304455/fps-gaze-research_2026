@@ -65,6 +65,18 @@ python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin
       `bias_y_deg` を比べる。0.05 の方が上下端のずれ（上のバーは下向き、下のバーは上向き）が小さければ 0.05 を採用
 - [ ] 誤差が 1.5° を超えた点は自動で1回測り直される。`summary.retried_points` と各点の `first_attempt` を確認
 
+> 2026-10-09 の結果（各1回）：0.05 は全体平均が同等（0.81°）で、HUD 9点中6点が悪化し、測り直しも4点（0.1 は1点）。
+> **0.1 を継続**。上下端の中央向きのずれ（上 +0.3〜1.2°、下 −0.4〜0.9°）はどちらでも残った。
+
+画面の物理設定の確認（上下端のずれの原因候補）：
+`aoi_check.py --calib ...` が「画面の設定（トラッカー）」を表示する。2026-10-09 の calib では
+トラッカー側が 607.0×341.4 mm・後ろへの傾き 20.0°、AOI JSON は 596.7×335.6 mm だった。
+- [ ] 画面の表示領域（黒枠の内側、映像が出る範囲）の幅・高さを巻尺で実測する
+- [ ] モニターの傾きを実測する（スマートフォンの水準器アプリを画面に当てる。鉛直からの角度）
+- [ ] Eye Tracker Manager のディスプレイ設定（Spark の取り付け・画面サイズ）と実測値を比べる。
+      違っていれば設定し直して、キャリブレーション＋検証をやり直す
+- [ ] AOI JSON の `display.width_mm / height_mm` も実測値に合わせる（結果を Claude に伝える）
+
 前回の位置に合わせる（2回目以降のセッション）：
 ```powershell
 python .\src\gaze_estimation\calibrate_validate.py --subject TEST --reference (Get-ChildItem .\data\raw\calib_TEST_*.json | Select-Object -Last 1).FullName
