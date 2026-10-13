@@ -47,7 +47,7 @@ if str(_THIS_DIR) not in sys.path:
 import gaze_metrics as gm  # noqa: E402
 from aoi_geometry import find_overlapping_aois, get_display, load_aoi_config  # noqa: E402
 
-SCRIPT_VERSION = "3.0.0-idt-segments"
+SCRIPT_VERSION = "3.1.0-idt-segments"
 _PROJECT_ROOT = _THIS_DIR.parent.parent
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "processed" / "aoi_result"
 
@@ -199,7 +199,36 @@ def build_arg_parser():
     p.add_argument("--session-base", default=None, help="セッション名（既定：入力CSVのファイル名から拡張子を除いたもの）")
     p.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="出力の親フォルダ（この下に <session_base>/ を作る）")
     p.add_argument("--compare-proc", default=None, help="旧方式の *_proc.csv。新方式との有効サンプルの一致を qc.json に記録する")
+    p.add_argument("--overwrite", action="store_true",
+                   help="出力先に、パラメータや AOI 設定の違う既存の結果があっても上書きする")
     return p
+
+
+def check_existing_output(out_dir: Path, params: dict, aoi_sha256: str, overwrite: bool) -> None:
+    """
+    出力先に既存の結果（qc.json）があり、解析パラメータか AOI 設定が今回と違う場合は上書きしない。
+    感度分析（例：analysis_params_sensitivity_fixed650.json）を既定の出力先で実行して、
+    主解析の結果を黙って置き換えてしまうのを防ぐ。同じ条件での再実行は上書きしてよい。
+    """
+    qc_path = out_dir / "qc.json"
+    if overwrite or not qc_path.exists():
+        return
+    try:
+        with open(qc_path, "r", encoding="utf-8") as f:
+            old = json.load(f)
+    except (OSError, ValueError):
+        raise SystemExit(f"エラー: 既存の {qc_path} を読めません。確認してから --overwrite で上書きしてください。")
+    diffs = sorted(k for k in set(params) | set(old.get("params", {}))
+                   if params.get(k) != old.get("params", {}).get(k))
+    old_sha = ((old.get("inputs") or {}).get("aoi_config") or {}).get("sha256")
+    if old_sha != aoi_sha256:
+        diffs.append("AOI設定ファイル（sha256）")
+    if diffs:
+        raise SystemExit(
+            f"エラー: {out_dir} には条件の違う解析結果があります（違い: {diffs}）。\n"
+            "  主解析の結果を上書きしないよう中止しました。感度分析は出力先を分けてください。例：\n"
+            "    --output-dir .\\data\\processed\\aoi_result_fixed650\n"
+            "  意図して置き換える場合だけ --overwrite を付けてください。")
 
 
 def main(argv=None):
@@ -245,7 +274,10 @@ def main(argv=None):
               "卒論の主解析には使わないでください。")
 
     # --- 解析 ---
-    res = gm.analyze_session(df, aois, display, params, segments)
+    try:
+        res = gm.analyze_session(df, aois, display, params, segments)
+    except ValueError as e:
+        raise SystemExit(f"エラー: {e}")
     if params["eye_screen_distance_source"] == "measured":
         used = res["eye_distance_used"]
         distance_note = (f"実測（{used['detail']}。眼−トラッカー距離で近似）。"
@@ -253,10 +285,22 @@ def main(argv=None):
         print(f"眼−画面距離（実測・分析区間内の中央値）: {used['mm']:.0f} mm "
               f"（5〜95%: {used['p05_mm']:.0f}〜{used['p95_mm']:.0f} mm）")
 
+    # 区間ごとのサンプル数（0件の区間も残す）。全区間が0件なら同期・区間の誤りなので止める
+    seg_counts = gm.segment_sample_counts(res["samples"], res["segments"])
+    round_of = dict(zip(res["segments"]["segment_id"].astype(int), res["segments"]["round"]))
+    empty_ids = seg_counts.loc[seg_counts["n_samples"] == 0, "segment_id"].astype(int).tolist()
+    if empty_ids and len(empty_ids) == len(seg_counts):
+        raise SystemExit("エラー: どの区間にも視線サンプルが入りません。同期オフセット（--sync / --offset の符号・値）か、"
+                         "区間ファイルが別の動画のものでないかを確認してください。")
+    if empty_ids:
+        print(f"⚠ 警告: 視線サンプルが0件の区間があります（round={[round_of[i] for i in empty_ids]}）。"
+              "区間が記録の範囲外にないか確認してください。")
+
     # --- 出力 ---
     out_dir = Path(args.output_dir) / session_base
     if out_dir.resolve().is_relative_to((_PROJECT_ROOT / "data" / "raw").resolve()):
         raise SystemExit("エラー: data/raw の下には出力しません。")
+    check_existing_output(out_dir, params, sha256_of(Path(args.aoi)), args.overwrite)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     def write(df_out: pd.DataFrame, name: str, index=False):
@@ -273,7 +317,6 @@ def main(argv=None):
 
     samples = res["samples"]
     in_seg = samples["segment_id"].notna()
-    seg_valid = samples[in_seg].groupby("segment_id")["valid"].agg(["size", "sum"])
     qc = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "script": {"name": Path(__file__).name, "version": SCRIPT_VERSION, "git_commit": git_commit()},
@@ -304,10 +347,12 @@ def main(argv=None):
             "offscreen": "有効サンプルのうち center_x/center_y が [0,1] の外",
             "gaze_pct": "区間内で sample_aoi がそのAOIの有効サンプル数 / 分母。分母は区間内の有効サンプル数"
                         + ("（offscreen を含む）" if params["offscreen_in_denominator"] else "（offscreen を除く）"),
-            "missing_gap": "欠測の長さ = 連続する有効サンプルの時刻差 − 名目サンプル間隔。座標の補間はしない",
+            "missing_gap": "欠測の長さ = 連続する有効サンプルの時刻差 − 名目サンプル間隔。座標の補間はしない。"
+                           f"時刻は params.duration_time_column（{params['duration_time_column']}）",
             "fixation": "I-DT。区間ごと・欠測（max_gap_ms 超）で分割した系列の内部で検出（注視は瞬目をまたがない）。"
                         "分散 = (max θx − min θx) + (max θy − min θy)。θ は画面中央正面・距離 D を仮定した視角",
-            "fixation_duration": "最後のサンプル時刻 − 最初のサンプル時刻 + 名目サンプル間隔",
+            "fixation_duration": "最後のサンプル時刻 − 最初のサンプル時刻 + 名目サンプル間隔"
+                                 f"（時刻は {params['duration_time_column']}。区間付与・同期は pc_time_sec）",
             "fixation_aoi": "注視の重心（サンプル座標の平均）が入る AOI",
             "visit": "同一AOIに割り当てられた連続注視のまとまり。区間をまたがない。"
                      f"間の欠測が {params['visit_merge_max_gap_ms']:g} ms 以下（瞬目相当）なら同じ訪問の続きとみなし"
@@ -317,7 +362,9 @@ def main(argv=None):
             "fixations_per_min": "注視数 / (区間内の有効サンプル数 × 名目サンプル間隔 / 60)",
             "ttff_sec": "区間の開始から、そのAOIへの最初の注視の開始まで。注視が無い区間は NaN かつ ttff_censored=True",
             "session_aggregation": "割合の平均ではなく、サンプル数・件数・時間を合算してから比率を出す",
-            "sample_class": "aoi_fixation / aoi_nonfixation / outside / offscreen / invalid（モジュール docstring 参照）",
+            "sample_class": "aoi_fixation（AOI内のサンプルで、属する注視の AOI も同じ＝AOIへの注視）/ "
+                            "aoi_nonfixation（AOI内だが注視に属さない、または属する注視の AOI が別）/ "
+                            "outside / offscreen / invalid / out_of_segment",
         },
         "data_quality": {
             "n_rows": int(len(samples)),
@@ -328,8 +375,11 @@ def main(argv=None):
             "n_segments": int(len(res["segments"])),
             "analysis_time_sec": float((res["segments"]["gaze_end_sec"] - res["segments"]["gaze_start_sec"]).sum()),
             "valid_rate_by_segment": {
-                str(int(k)): (float(r["sum"] / r["size"]) if r["size"] else None) for k, r in seg_valid.iterrows()
+                str(int(r.segment_id)): (None if pd.isna(r.valid_rate) else float(r.valid_rate))
+                for r in seg_counts.itertuples()
             },
+            "n_samples_by_segment": {str(int(r.segment_id)): int(r.n_samples) for r in seg_counts.itertuples()},
+            "empty_segment_rounds": [round_of[i] for i in empty_ids],
             "nominal_sample_interval_sec": res["sample_dt"],
             "n_fixations": int(len(res["fixations"])),
             "offscreen": gm.offscreen_summary(samples),

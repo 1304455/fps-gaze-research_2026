@@ -16,8 +16,8 @@
 用語（卒論でもこの語を使う）
 --------------------------
 - sample_aoi   ：サンプルの視線位置が入っている AOI（outside / offscreen / invalid を含む）
-- sample_class ：aoi_fixation（AOI内の視線位置で、かつ注視に属する）
-                 aoi_nonfixation（AOI内の視線位置だが、注視に属さない）
+- sample_class ：aoi_fixation（AOI内の視線位置で、かつ同じAOIに割り当てられた注視に属する＝「AOIへの注視」）
+                 aoi_nonfixation（AOI内の視線位置だが、注視に属さない、または属する注視の AOI が別）
                  outside（画面内だがどのAOIにも入らない）／ offscreen（画面外）／ invalid（無効・判定不能）
                  区間外のサンプルは out_of_segment（注視検出の対象外。sample_aoi は付く）
 - fixation_aoi ：注視の重心が入っている AOI
@@ -72,8 +72,10 @@ DEFAULT_PARAMS = {
     "max_gap_ms": 75.0,
     # Gaze % の分母に offscreen（有効だが画面外）を含めるか（決定事項2）
     "offscreen_in_denominator": True,
-    # 注視時間・ギャップ判定に使う時刻列（決定事項4）。区間付与・同期は常に pc_time_sec
-    "duration_time_column": "pc_time_sec",
+    # 注視時間・欠測ギャップの判定に使う時刻列（決定事項4。2026-10-13 合意：system_time_stamp_us）。
+    # pc_time_sec はホストへのコールバック到着時刻で、PC 側の受信遅延（5分間テストで30件中27件）を
+    # 欠測と誤認して注視・訪問を切ってしまうため、デバイス側の時刻を使う。区間付与・同期は常に pc_time_sec
+    "duration_time_column": "system_time_stamp_us",
     # 主解析に使う区間の種類
     "segment_types": ["alive"],
     # 訪問・遷移の判定で「つながっている」とみなす欠測の長さの上限 [ms]（2026-10-09 合意）。
@@ -173,6 +175,10 @@ def segments_from_video_time(seg_df: pd.DataFrame, offset_sec: float, segment_ty
     seg = seg[seg["segment_type"].astype(str).isin(segment_types)].copy()
     seg["video_start_sec"] = pd.to_numeric(seg["video_start_sec"], errors="raise")
     seg["video_end_sec"] = pd.to_numeric(seg["video_end_sec"], errors="raise")
+    # NaN との比較はすべて False になり、下の「終了 <= 開始」の検査をすり抜けるので先に弾く
+    blank = seg[seg["video_start_sec"].isna() | seg["video_end_sec"].isna()]
+    if not blank.empty:
+        raise ValueError(f"開始または終了の時刻が空の区間があります（round={blank['round'].tolist()}）")
     bad = seg[seg["video_end_sec"] <= seg["video_start_sec"]]
     if not bad.empty:
         raise ValueError(f"終了 <= 開始 の区間があります（round={bad['round'].tolist()}）")
@@ -185,6 +191,20 @@ def segments_from_video_time(seg_df: pd.DataFrame, offset_sec: float, segment_ty
     seg["gaze_start_sec"] = seg["video_start_sec"] + offset_sec
     seg["gaze_end_sec"] = seg["video_end_sec"] + offset_sec
     return seg
+
+
+def segment_sample_counts(samples: pd.DataFrame, segments: pd.DataFrame) -> pd.DataFrame:
+    """
+    区間ごとのサンプル数と有効サンプル数。サンプルが0件の区間も行として残す
+    （groupby だけだと0件の区間が消え、「区間が記録の外にある」ことに気づけない）。
+    """
+    ids = segments["segment_id"].astype(int).to_numpy()
+    in_seg = samples[samples["segment_id"].notna()]
+    g = in_seg.groupby(in_seg["segment_id"].astype(int))["valid"].agg(n_samples="size", n_valid="sum")
+    out = g.reindex(ids, fill_value=0)
+    out.index.name = "segment_id"
+    out["valid_rate"] = (out["n_valid"] / out["n_samples"]).where(out["n_samples"] > 0)
+    return out.reset_index()
 
 
 def whole_session_segment(t_sync: np.ndarray, sample_dt: float) -> pd.DataFrame:
@@ -376,6 +396,9 @@ def analyze_session(df: pd.DataFrame, aois: list[dict], display: DisplayGeometry
         segments = whole_session_segment(t_sync, sample_dt)
     segment_id = assign_segments(t_sync, segments)
     in_seg = ~np.isnan(segment_id)
+    if not in_seg.any():
+        raise ValueError("どの区間にも視線サンプルが入りません。同期オフセット（--sync / --offset の符号・値）か、"
+                         "区間ファイルが別の動画のものでないかを確認してください。")
 
     # 眼−画面距離：measured なら分析区間内の実測値（gaze_origin z の中央値）で置き換える
     if params["eye_screen_distance_source"] == "measured":
@@ -449,8 +472,11 @@ def analyze_session(df: pd.DataFrame, aois: list[dict], display: DisplayGeometry
     # サンプル分類
     sample_class = np.full(len(df), OUTSIDE_LABEL, dtype=object)
     in_aoi = np.isin(sample_aoi, aoi_names)
-    sample_class[in_aoi & has_fix] = "aoi_fixation"
-    sample_class[in_aoi & ~has_fix] = "aoi_nonfixation"
+    # 「AOIへの注視」= サンプルの AOI と、そのサンプルが属する注視の AOI（重心で判定）が同じ（2026-10-13 合意）。
+    # 注視に属していても注視の AOI が別なら、そのAOIにとっては「非注視のAOI内サンプル」
+    fix_same_aoi = has_fix & (fixation_aoi == sample_aoi)
+    sample_class[in_aoi & fix_same_aoi] = "aoi_fixation"
+    sample_class[in_aoi & ~fix_same_aoi] = "aoi_nonfixation"
     sample_class[sample_aoi == OFFSCREEN_LABEL] = OFFSCREEN_LABEL
     sample_class[~valid] = INVALID_LABEL
     sample_class[~in_seg] = OUT_OF_SEGMENT

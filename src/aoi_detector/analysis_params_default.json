@@ -6,7 +6,7 @@
   "idt_max_dispersion_deg": 1.0,
   "max_gap_ms": 75.0,
   "offscreen_in_denominator": true,
-  "duration_time_column": "pc_time_sec",
+  "duration_time_column": "system_time_stamp_us",
   "segment_types": [
     "alive"
   ],

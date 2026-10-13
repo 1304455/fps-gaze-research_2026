@@ -48,7 +48,10 @@ DEFAULT_QC_CRITERIA = {
     "require_calibration_passed": None,
     "require_resolution_ok": None,
     "max_eye_distance_deviation_mm": None,
+    # I-DT の視角換算に実際に使った距離（qc.json の eye_screen_distance_used.mm）と基準値（650 mm）の差の上限
+    "max_eye_distance_from_reference_mm": None,
 }
+GROUP_MISSING_LABEL = "未記入"
 # 全セッションで一致していなければならない解析パラメータ（違うと合算できない）
 PARAMS_MUST_MATCH = [
     "idt_min_duration_ms", "idt_max_dispersion_deg", "max_gap_ms", "offscreen_in_denominator",
@@ -70,16 +73,44 @@ def load_session(d: Path) -> tuple[pd.DataFrame, dict]:
 
 
 def check_params_consistent(qcs: list[dict]) -> list[str]:
-    """合算してはいけないパラメータ違い・AOI定義違いを列挙する。"""
+    """合算してはいけないパラメータ違い・AOI定義違い・解析スクリプトの版の違いを列挙する。"""
     problems = []
     for key in PARAMS_MUST_MATCH:
         vals = {json.dumps(q["params"].get(key)) for q in qcs}
         if len(vals) > 1:
             problems.append(f"params.{key} がセッション間で異なります: {sorted(vals)}")
+    # 距離を固定値にしたセッション同士は、その値も一致していなければならない（I-DT の閾値の視角が変わる）。
+    # measured / manifest はセッションごとに違うのが正しいので比べない
+    fixed = {json.dumps(q["params"].get("eye_screen_distance_mm")) for q in qcs
+             if q["params"].get("eye_screen_distance_source") == "fixed"}
+    if len(fixed) > 1:
+        problems.append(f"eye_screen_distance_source=fixed なのに eye_screen_distance_mm が異なります: {sorted(fixed)}")
+    versions = {json.dumps((q.get("script") or {}).get("version")) for q in qcs}
+    if len(versions) > 1:
+        problems.append(f"aoi_analysis の版（script.version）がセッション間で異なります: {sorted(versions)}")
     aoi_hash = {q["inputs"]["aoi_config"]["sha256"] for q in qcs}
     if len(aoi_hash) > 1:
         problems.append(f"AOI設定ファイルがセッション間で異なります（sha256 {len(aoi_hash)}種類）")
     return problems
+
+
+def params_warnings(qcs: list[dict]) -> list[str]:
+    """合算は止めないが、記録しておくべき違い（git コミットの違いなど）。"""
+    commits = {(q.get("script") or {}).get("git_commit") for q in qcs}
+    if len(commits) > 1:
+        return [f"解析時の git コミットがセッション間で異なります: {sorted(str(c) for c in commits)}"
+                "（script.version が同じなら定義は同じ前提。気になる場合は同じコミットで解析し直す）"]
+    return []
+
+
+def validate_manifest(manifest: pd.DataFrame) -> None:
+    """台帳の session_base の重複はエラー（merge で指標の行が増え、Gaze % が水増しされるため）。"""
+    if "session_base" not in manifest.columns:
+        raise SystemExit("エラー: 台帳に session_base 列がありません。")
+    sb = manifest["session_base"].dropna()
+    dup = sorted(sb[sb.duplicated()].unique())
+    if dup:
+        raise SystemExit(f"エラー: 台帳に同じ session_base の行が複数あります: {dup}。1セッション1行にしてください。")
 
 
 def master_long(metrics: pd.DataFrame, manifest: "pd.DataFrame | None") -> pd.DataFrame:
@@ -98,10 +129,17 @@ def participant_metrics(metrics: pd.DataFrame, manifest: pd.DataFrame,
     参加者 × AOI の集計。サンプル数・件数・時間を合算してから比率を出す。
     session_flags があれば exclude_candidate のセッションを除いた版も出す（元データは消さない）。
     """
-    m = metrics.merge(manifest[["session_base", "participant_id", "group"]], on="session_base", how="left")
+    m = metrics.merge(manifest[["session_base", "participant_id", "group"]], on="session_base", how="left",
+                      validate="many_to_one")
     if m["participant_id"].isna().any():
         missing = sorted(m.loc[m["participant_id"].isna(), "session_base"].unique())
         raise ValueError(f"台帳に participant_id が無いセッションがあります: {missing}")
+    # group が空の行は groupby で黙って消えるので、ラベルを付けて残す
+    no_group = m["group"].isna() | (m["group"].astype(str).str.strip() == "")
+    if no_group.any():
+        print(f"⚠ 台帳の group が空の参加者があります（『{GROUP_MISSING_LABEL}』として集計に残します）: "
+              f"{sorted(m.loc[no_group, 'participant_id'].unique())}")
+        m.loc[no_group, "group"] = GROUP_MISSING_LABEL
 
     def agg(df: pd.DataFrame) -> pd.DataFrame:
         sess = df.drop_duplicates(["session_base"])[["participant_id", "session_base", "valid_time_sec",
@@ -151,6 +189,7 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
     dq = qc.get("data_quality", {})
     sync = qc.get("sync", {}) or {}
     eye = dq.get("eye_distance_from_tracker", {}) or {}
+    used = qc.get("eye_screen_distance_used", {}) or {}
     res = qc.get("resolution_check", {}) or {}
     calib_passed = calib_acc = None
     calib_file = _resolve((manifest_row or {}).get("calibration_file"))
@@ -175,6 +214,9 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
         "sync_method": sync.get("method"),
         "sync_within_expected_band": sync.get("within_expected_band"),
         "eye_tracker_distance_median_mm": eye.get("median_mm"),
+        "eye_screen_distance_used_mm": used.get("mm"),
+        "eye_screen_distance_source": used.get("source"),
+        "eye_screen_distance_reference_mm": used.get("reference_mm", (qc.get("params") or {}).get("eye_screen_distance_mm")),
         "eye_screen_distance_measured_mm": float(measured_cm) * 10 if measured_cm else None,
         "calibration_passed": calib_passed,
         "calibration_mean_accuracy_deg": calib_acc,
@@ -203,6 +245,9 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
     dev = c["max_eye_distance_deviation_mm"]
     meas, med = row["eye_screen_distance_measured_mm"], row["eye_tracker_distance_median_mm"]
     flag("eye_distance_deviation", None if dev is None or meas is None or med is None else abs(meas - med) > dev)
+    ref_dev = c["max_eye_distance_from_reference_mm"]
+    u, r = row["eye_screen_distance_used_mm"], row["eye_screen_distance_reference_mm"]
+    flag("eye_distance_from_reference", None if ref_dev is None or u is None or r is None else abs(u - r) > ref_dev)
 
     flags = [row[k] for k in row if k.startswith("flag_")]
     row["exclude_candidate"] = any(f is True for f in flags)
@@ -229,6 +274,7 @@ def main(argv=None):
         criteria.update(user)
 
     manifest = pd.read_csv(args.manifest, dtype=str, encoding="utf-8-sig")
+    validate_manifest(manifest)
     dirs = find_sessions(args.results_dir)
     if not dirs:
         raise SystemExit(f"エラー: {args.results_dir} に解析結果がありません。")
@@ -242,6 +288,9 @@ def main(argv=None):
             print(f"⚠ {pr}")
         if not args.allow_mixed_params:
             raise SystemExit("エラー: 定義の違う結果は合算できません。同じパラメータで解析し直してください。")
+    warnings = params_warnings(qcs)
+    for w in warnings:
+        print(f"⚠ {w}")
 
     mrows = {r["session_base"]: {k: (None if pd.isna(v) else v) for k, v in r.items()}
              for r in manifest.to_dict("records")}
@@ -259,7 +308,8 @@ def main(argv=None):
     qc_report.to_csv(args.out_dir / "qc_report.csv", index=False, encoding="utf-8-sig")
     with open(args.out_dir / "aggregate_provenance.json", "w", encoding="utf-8") as f:
         json.dump({"sessions": [q.get("session_base") for q in qcs], "qc_criteria": criteria,
-                   "params_problems": problems, "manifest": str(args.manifest.resolve())},
+                   "params_problems": problems, "params_warnings": warnings,
+                   "manifest": str(args.manifest.resolve())},
                   f, ensure_ascii=False, indent=2)
     n_flag = int(qc_report["exclude_candidate"].sum())
     print(f"セッション数: {len(qcs)}  除外候補: {n_flag}  （評価した基準数: {int(qc_report['n_criteria_evaluated'].max())}）")

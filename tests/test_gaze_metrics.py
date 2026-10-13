@@ -152,7 +152,8 @@ class TestIdt:
         assert f["start_sync_sec"].iloc[0] == pytest.approx(0.0)
         assert f["end_sync_sec"].iloc[0] == pytest.approx(19 * DT)
         assert f["start_sync_sec"].iloc[1] == pytest.approx(23 * DT)
-        assert f["duration_sec"].iloc[0] == pytest.approx(20 * DT)
+        # 注視時間は既定で system_time_stamp_us（µs 整数）から計算するので µs の丸め分だけ許容する
+        assert f["duration_sec"].iloc[0] == pytest.approx(20 * DT, abs=1e-5)
 
     def test_shorter_than_min_duration_is_not_fixation(self, aois):
         # 5サンプル = 83 ms < 100 ms
