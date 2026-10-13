@@ -20,6 +20,10 @@ tobii_capture_with_sync_flash_v5.py
   - ログの秘密情報の伏せ字をフィルタからハンドラごとのフォーマッタに変更（コンソールには制御 URL の token を表示）
   - obs_controller_v2 の import フォールバック先を実ファイル位置（src/）に修正
 
+【v5.1.1 の変更（2026-10-13。meta の追加のみ。CSV は 5.1.0 と同じ）】
+  - meta.json の time_reference_notes に analysis_time_columns を追加し、note に解析での時刻列の使い分け
+    （同期・区間は pc_time_sec、注視時間・欠測は system_time_stamp_us）を追記。primary_analysis_column は変えていない
+
 Tobii Pro Spark 視線データ取得 + OBS同期用フラッシュマーカー表示プログラム
 
 準拠要件:
@@ -215,7 +219,7 @@ except ImportError:
 
 IS_WINDOWS = platform.system() == "Windows"
 
-SCRIPT_VERSION = "5.1.0-eye-origin-pupil"
+SCRIPT_VERSION = "5.1.1-eye-origin-pupil"
 
 # ============================================================================
 # 定数・既定値
@@ -1488,7 +1492,12 @@ def main():
         "time_reference_notes": {
             "primary_analysis_column": "pc_time_sec",
             "auxiliary_verification_columns": ["device_time_stamp_us", "system_time_stamp_us"],
-            "note": "pc_time_sec は視線記録開始(gaze_subscribe_call)からの経過秒。"
+            # 2026-10-13 合意（決定事項4）。primary_analysis_column は同期・区間付与の列として残す
+            "analysis_time_columns": {"sync_and_segments": "pc_time_sec",
+                                      "durations_and_gaps": "system_time_stamp_us"},
+            "note": "pc_time_sec は視線記録開始(gaze_subscribe_call)からの経過秒で、ホストへのコールバック到着時刻。"
+                    "AOI解析（aoi_analysis-ver3）では、動画同期と区間付与に pc_time_sec、"
+                    "注視時間と欠測の判定に system_time_stamp_us（デバイス側の時刻）を使う（2026-10-13 合意）。"
                     "OBS同期(開始)には start_sync フィールド"
                     "(gaze_first_sample_utc と obs_start_request_utc/"
                     "obs_record_started_utc のUTC差分)の使用を推奨する。"

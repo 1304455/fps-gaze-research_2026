@@ -57,7 +57,7 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-SCRIPT_VERSION = "1.2.1"
+SCRIPT_VERSION = "1.3.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
@@ -78,6 +78,25 @@ def calibration_points(margin: float = DEFAULT_CALIB_MARGIN) -> list[tuple[float
         raise ValueError(f"--calib-margin は 0 より大きく 0.5 未満にしてください: {margin}")
     lo, hi = margin, 1.0 - margin
     return [(0.5, 0.5), (lo, lo), (0.5, lo), (hi, lo), (lo, 0.5), (hi, 0.5), (lo, hi), (0.5, hi), (hi, hi)]
+
+
+def resolve_retry_threshold(no_retry: bool, retry_threshold_deg: "float | None", max_hud_accuracy_deg: float
+                            ) -> "float | None":
+    """測り直しの閾値。--no-retry なら None、未指定なら HUD 点の合格閾値。0 も有効な指定として扱う（全点を測り直す）。"""
+    if no_retry:
+        return None
+    return max_hud_accuracy_deg if retry_threshold_deg is None else retry_threshold_deg
+
+
+def parse_display_index(text: str, n_monitors: int) -> int:
+    """ディスプレイ番号（1 始まり）を 0 始まりの index にする。範囲外・数字以外は ValueError（負の index で別の画面を選ばない）。"""
+    t = text.strip()
+    if not t.isdigit():
+        raise ValueError("数値を入力してください。")
+    idx = int(t)
+    if not 1 <= idx <= n_monitors:
+        raise ValueError(f"1〜{n_monitors} の番号を入力してください。")
+    return idx - 1
 
 
 def points_to_retry(points: list[dict], threshold_deg: float) -> list[int]:
@@ -171,11 +190,13 @@ def point_metrics(samples: list[dict], target_xy: tuple[float, float], display_a
                 d.append(s[f"{side}_gaze_point_on_display_area"])
         m = eye_metrics(np.asarray(o, dtype=float).reshape(-1, 3),
                         np.asarray(g, dtype=float).reshape(-1, 3), target_ucs)
+        m["bias_x_norm"] = m["bias_y_norm"] = None
         if d:
             d = np.asarray(d, dtype=float)
             m["bias_x_norm"] = float(d[:, 0].mean() - target_xy[0])
             m["bias_y_norm"] = float(d[:, 1].mean() - target_xy[1])
-            m["valid_rate"] = len(d) / len(samples) if samples else None
+        # 片眼の有効サンプルが0件でも 0.0 を出す（キーが無いと、比較ツールで最悪の点が見落とされる）
+        m["valid_rate"] = len(d) / len(samples) if samples else None
         out[side] = m
         if m["accuracy_deg"] is not None:
             accs.append(m["accuracy_deg"])
@@ -200,14 +221,19 @@ def validation_targets(aois: "list[dict] | None", min_separation: float = 0.03) 
     return targets
 
 
-def judge(points: list[dict], max_mean_acc: float, max_hud_acc: float) -> dict:
-    """全体平均 accuracy と、AOI中心の各点の accuracy で合否を判定する。"""
+def judge(points: list[dict], max_mean_acc: float, max_hud_acc: float,
+          calibration_ok: "bool | None" = None) -> dict:
+    """
+    全体平均 accuracy と、AOI中心の各点の accuracy で合否を判定する。
+    calibration_ok=False（SDK の較正が失敗）なら精度によらず不合格。検証はデバイスに残った前回の較正で
+    行われるので、精度が良くても今回の較正の結果ではない。None は較正をしていない（--validate-only）。
+    """
     accs = [p["accuracy_deg"] for p in points if p["accuracy_deg"] is not None]
     mean_acc = float(np.mean(accs)) if accs else None
     hud = [p for p in points if p.get("kind") == "aoi"]
     hud_fail = [p["label"] for p in hud if p["accuracy_deg"] is None or p["accuracy_deg"] > max_hud_acc]
     missing = [p["label"] for p in points if p["accuracy_deg"] is None]
-    passed = mean_acc is not None and mean_acc <= max_mean_acc and not hud_fail
+    passed = mean_acc is not None and mean_acc <= max_mean_acc and not hud_fail and calibration_ok is not False
     return {
         "mean_accuracy_deg": mean_acc,
         "mean_precision_rms_s2s_deg": (float(np.mean([p["precision_rms_s2s_deg"] for p in points
@@ -217,6 +243,7 @@ def judge(points: list[dict], max_mean_acc: float, max_hud_acc: float) -> dict:
         "threshold_hud_accuracy_deg": max_hud_acc,
         "hud_points_failed": hud_fail,
         "points_without_data": missing,
+        "calibration_ok": calibration_ok,
         "passed": bool(passed),
     }
 
@@ -342,7 +369,8 @@ def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float,
     used = []
     for p in getattr(result, "calibration_points", []) or []:
         used.append({"x": p.position_on_display_area[0], "y": p.position_on_display_area[1]})
-    return {"status": str(result.status), "points": point_status, "points_used_by_sdk": used}
+    return {"status": str(result.status), "succeeded": result.status == tr.CALIBRATION_STATUS_SUCCESS,
+            "points": point_status, "points_used_by_sdk": used}
 
 
 def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], display_area: dict,
@@ -457,8 +485,13 @@ def main(argv=None):
     print("\n=== 接続ディスプレイ一覧 ===")
     for i, m in enumerate(monitors, start=1):
         print(f"  {i}: {m.name}  ({m.width}x{m.height} @ ({m.x},{m.y}))")
-    idx = int(input(f"測定対象ディスプレイの番号 (1-{len(monitors)}): ").strip())
-    monitor = monitors[idx - 1]
+    while True:
+        try:
+            monitor = monitors[parse_display_index(input(f"測定対象ディスプレイの番号 (1-{len(monitors)}): "),
+                                                   len(monitors))]
+            break
+        except ValueError as e:
+            print(f"選択ミス: {e}")
 
     from head_position_guide import reference_from_calib, resolve_target_distance, run_position_guide
 
@@ -470,7 +503,7 @@ def main(argv=None):
             print(f"⚠ 警告: {args.reference} に頭部位置の記録がありません。距離と左右だけで合わせます。")
     target_z, target_z_source = resolve_target_distance(args.target_distance_mm, reference)
     calib_points = calibration_points(args.calib_margin)
-    retry_thr = None if args.no_retry else (args.retry_threshold_deg or args.max_hud_accuracy_deg)
+    retry_thr = resolve_retry_threshold(args.no_retry, args.retry_threshold_deg, args.max_hud_accuracy_deg)
 
     display_area = display_area_dict(eyetracker)
     screen = TargetScreen(monitor, pygame, args.font)
@@ -493,6 +526,9 @@ def main(argv=None):
                 return
             calibration = run_calibration(tr, eyetracker, screen, args.shrink_sec, calib_points)
             print(f"キャリブレーション結果: {calibration['status']}")
+            if not calibration["succeeded"]:
+                print("⚠⚠ キャリブレーションに失敗しました。検証はトラッカーに残っている前回の較正で行われるため、"
+                      "結果は『不合格』として保存します。姿勢を直して、もう一度実行してください。")
         if not screen.message("検証：同じように点を見続けてください\n（何かキーを押すと開始 / ESC で中止）"):
             return
         points = run_validation(tr, eyetracker, screen, targets, display_area,
@@ -516,7 +552,8 @@ def main(argv=None):
         print(f"保存しました: {out}")
         return
 
-    verdict = judge(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg)
+    verdict = judge(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg,
+                    calibration_ok=None if calibration is None else calibration["succeeded"])
     verdict["retried_points"] = [p["label"] for p in points if p.get("retried")]
     out = args.output_dir / f"calib_{args.subject}_{stamp}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -539,6 +576,9 @@ def main(argv=None):
             "accuracy_deg": "眼位置(gaze_origin)から注視点(gaze_point, UCS)へのベクトルと、目標点へのベクトルの角度差の平均",
             "precision_rms_s2s_deg": "連続サンプルの視線ベクトル間の角度差の二乗平均平方根",
             "binocular": "左右眼の値の平均（片眼のみ有効ならその眼の値）",
+            "passed": "全点平均 accuracy と AOI中心の各点の accuracy が閾値以内、かつ SDK の較正が失敗していない"
+                      "（calibration_ok=False なら不合格。None は較正なし＝--validate-only）",
+            "valid_rate": "検証区間のサンプルのうち、その眼の gaze_point と gaze_origin が有効な割合（0件なら 0.0）",
             "bias_norm": "正規化座標上の平均ずれ（注視点平均 − 目標）。正の y は下方向",
             "retried": "1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、データ品質（両眼の有効率の低い方 → precision）"
                        "が良い方を採用（accuracy は採否に使わない）。両方を first_attempt / retry_attempt に残す",
@@ -550,6 +590,8 @@ def main(argv=None):
     with open(out, "w", encoding="utf-8") as f:
         json.dump(record, f, ensure_ascii=False, indent=2)
     print(f"\n全体平均 accuracy: {verdict['mean_accuracy_deg']}  precision: {verdict['mean_precision_rms_s2s_deg']}")
+    if verdict["calibration_ok"] is False:
+        print("判定: 不合格（キャリブレーションの失敗。精度の値は前回の較正によるもの）")
     print(f"判定: {'合格' if verdict['passed'] else '不合格'}  HUD点の不合格: {verdict['hud_points_failed']}"
           f"  測り直した点: {verdict['retried_points']}")
     print(f"保存しました: {out}")
