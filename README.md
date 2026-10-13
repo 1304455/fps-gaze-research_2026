@@ -128,7 +128,7 @@ fps-gaze-research_2026/
 │   │   ├── calibrate_validate.py            9点キャリブレーション＋検証、頭部位置ガイド
 │   │   ├── head_position_guide.py           頭部位置ガイド（距離・左右・上下）
 │   │   └── tobii_capture_with_sync_flash_v5.py
-│   │                             視線取得の本体（SCRIPT_VERSION 5.1.0-eye-origin-pupil）
+│   │                             視線取得の本体（SCRIPT_VERSION 5.1.1-eye-origin-pupil）
 │   │                             計測の開始／終了は別端末のブラウザから HTTP で行う
 │   │
 │   ├── aoi_detector/            【AOI 定義・解析】
@@ -288,7 +288,9 @@ gaze_S01_1_unrated_20261019_143012_log.txt         実行ログ
 gaze_S01_1_unrated_20261019_143012_obs_sync.jsonl  OBS 同期イベントログ
 ```
 
-録画した mp4 は OBS 側で設定した出力先に保存されます。計測後、`data/sessions_manifest.csv` に1行記入します（`docs/templates/sessions_manifest_template.csv` 参照。1セッション1行）。
+録画した mp4 は OBS 側で設定した出力先に保存されます。計測後、`data/sessions_manifest.csv` に1行記入します（`docs/templates/sessions_manifest_template.csv` 参照。1セッション1行、1人の参加者の `group` はすべての行で同じ値）。
+
+> 台帳や区間ファイルを Excel で編集したら、**『CSV UTF-8（コンマ区切り）』で保存**してください。既定の「CSV（コンマ区切り）」は文字コードが cp932 になります（解析側は警告を出して読みます）。
 
 > ログファイルには OBS のパスワードと制御 token を残しません（伏せ字。コンソールには開始用 URL を表示します）。
 
@@ -344,6 +346,8 @@ python .\src\visualizer\segment_annotator.py "C:\Users\kawalab\Videos\2026-10-19
 
 録画を再生しながら、`b`（購入フェーズ終了＝区間開始）、`k`（死亡）、`e`（ラウンド終了）を押して区間を記録します。`SPACE` で再生／停止、`d`/`a` で1フレーム、`l`/`j` で5秒移動、`u` で取り消し、`q` で保存して終了します。結果は `data/annotations/<session_base>_segments.csv`（動画時刻）に保存されます。
 
+区間 CSV は押したイベント（`<session_base>_segments_events.json`）から作り直して保存します。CSV を手で編集していた場合は、上書きの前に `<session_base>_segments.backup_<日時>.csv` へ退避します。イベントの記録が無いのに区間 CSV に行がある場合は、上書きしないよう起動しません。
+
 > 行を削除する方式（Excel で `*_proc.csv` を作る方法）は廃止しました。行削除ではラウンドをまたいで注視・訪問・遷移が連結され、分析時間（分母）も区間ごとに追えないためです。
 
 ### 5.5 ⑤ AOI 解析を実行する
@@ -365,7 +369,12 @@ python .\src\aoi_detector\aoi_analysis-ver3.py `
 | `--params` | 既定値 | 解析パラメータ JSON（`analysis_params_default.json` 参照） |
 | `--manifest` | なし | セッション台帳（解像度の確認、`manifest` 距離モード） |
 | `--output-dir` | `data/processed/aoi_result` | 出力の親フォルダ（この下に `<session_base>/`） |
-| `--overwrite` | — | 条件（パラメータ・AOI 設定）の違う既存の結果を上書きする |
+| `--overwrite` | — | 条件の違う既存の結果を上書きする（下記） |
+| `--compare-proc` | なし | 旧方式の `*_proc.csv` と、分析対象の有効サンプルを突き合わせる（時刻の最近傍で照合） |
+
+出力先に既存の結果があり、**解析パラメータ・AOI 設定（中身）・入力 CSV・区間ファイルの有無と中身・同期オフセット**のどれかが違う場合は、解析の前に中止します（区間ファイルの付け忘れや感度分析で主解析を上書きしないため）。区間や同期を直して解析し直すときは `--overwrite` を付けます。
+
+区間の行数が「区間長 ÷ サンプル間隔」の 0.9 未満なら警告します（区間の一部が記録の範囲外にある疑い。`qc.json` の `sample_coverage_by_segment`）。
 
 出力（`data/processed/aoi_result/<session_base>/`）：
 
@@ -394,7 +403,21 @@ python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.
     --qc-criteria .\data\qc_criteria.json
 ```
 
-`data/processed/aggregate/` に、整然データ（`master_long.csv`）、参加者 × AOI の集計（`participant_aoi_metrics.csv`。割合の平均ではなく、件数・サンプル数を合算してから比率を出す）、除外候補のフラグ（`qc_report.csv`）を出力します。除外基準の数値（`docs/templates/qc_criteria_template.json`）は合意するまで null（評価しない）です。解析パラメータ・AOI 設定・解析スクリプトの版が違うセッションは合算しません。
+`data/processed/aggregate/` に、整然データ（`master_long.csv`）、参加者 × AOI の集計（`participant_aoi_metrics.csv`。割合の平均ではなく、件数・サンプル数を合算してから比率を出す）、除外候補のフラグ（`qc_report.csv`）を出力します。除外基準の数値（`docs/templates/qc_criteria_template.json`）は合意するまで null（評価しない）です。
+
+次の場合は合算せずに止めます。
+- 解析パラメータ・AOI 設定・解析スクリプトの版が違うセッションがある
+- 区間ファイルなし（記録全体）で解析したセッションがある（動作確認だけなら `--allow-whole-session`）
+- 台帳で session_base が重複・空欄、または1人の参加者に group が2種類以上ある
+
+台帳にあるのに解析結果が無いセッションは、`qc_report.csv` に `has_result=False` の行として残します。
+
+感度分析の集計は出力先を分けます（同じ出力先に別の `--results-dir` の集計があると中止します）。
+
+```powershell
+python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv `
+    --results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650
+```
 
 ### 5.7 補助ツール
 

@@ -137,10 +137,19 @@ python -c "import pandas as pd, sys; d=pd.read_csv(sys.argv[1]); print(d[['left_
 
 > 2026-10-13：v5.1.0 で眼位置 x/y の4列を末尾に追加した。`git pull` 後に短い計測（`--max-duration 60`）で
 > 列が増えていること、コンソールに制御 URL（token 付き）が出てログファイルでは `token=***` になることを確認する。
+> 同じ日の 5.1.1 で meta.json の `time_reference_notes` に `analysis_time_columns` を追加した（CSV は変わらない）。
+
+- [ ] 短い計測の `_meta.json` に `time_reference_notes.analysis_time_columns` がある
+- [ ] calibrate_validate（1.3.0）：ディスプレイ番号に `0` を入れると入力し直しになる（以前は最後の画面が選ばれていた）
+- [ ] calibrate_validate：保存された calib JSON の `summary.calibration_ok` が `true`（SDK 較正）／`null`（`--validate-only`）。
+      較正が失敗した回は `false` で、精度によらず不合格になる
 
 ## 4. 予備実験データで新旧の解析を比べる（T3・T4）
 
 予備実験の1試合（`_proc.csv` を作ってあるもの）で：
+
+> 台帳・区間ファイルを Excel で編集したら『CSV UTF-8（コンマ区切り）』で保存する（cp932 は警告付きで読む）。
+> `--compare-proc` は時刻の最近傍で照合するので、Excel で丸めた `_proc.csv` でも突き合わせられる（`n_unmatched_old` が 0 に近いこと）。
 
 ```powershell
 python .\src\visualizer\segment_annotator.py "<動画>.mp4" --session-base <session_base>
@@ -152,7 +161,10 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 - [ ] `qc.json` の `time_base_comparison.interval_difference_sd_ms` を控える（決定事項4は 10/13 に system_time で合意済み。実プレイでも同じ傾向かの確認）
 - [ ] `fixations.csv` の `duration_sec` の分布を見る（I-DT の閾値が自分のデータで妥当かの確認）
 - [ ] 感度分析（距離 650 mm 固定）は出力先を分けて実行する（同じ出力先では条件の違う結果の上書きを拒否する）：
-      `... --params .\src\aoi_detector\analysis_params_sensitivity_fixed650.json --output-dir .\data\processed\aoi_result_fixed650`
+      `... --params .\src\aoi_detector\analysis_params_sensitivity_fixed650.json --output-dir .\data\processed\aoi_result_fixed650`。
+      集計も `--results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650` で分ける
+- [ ] 区間を直して解析し直すときは `--overwrite` が要る（区間ファイル・同期オフセットの違いも上書き防止の対象）
+- [ ] coverage の警告（区間の行数が区間長の 0.9 未満）が出ないこと。出たら、その round が記録の範囲外にはみ出していないか確認する
 - [ ] `qc.json` の `data_quality.missing_gaps` を見る。瞬目は通常 100〜300 ms 程度なので、
       `200-300ms` の件数が多ければ `visit_merge_max_gap_ms` を 300 にするか検討する。
       `n_same_aoi_visit_breaks_by_long_gap`（長い欠測で切れた同一AOIの訪問数）が再訪数に対して大きくないかも確認
