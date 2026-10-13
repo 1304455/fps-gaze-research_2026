@@ -16,6 +16,7 @@ AOI と画面の幾何（正規化座標 ↔ mm ↔ 視角）を扱うモジュ�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -185,6 +186,15 @@ def load_aoi_config(path) -> tuple[list[dict], dict]:
 def get_display(raw_config: dict) -> "DisplayGeometry | None":
     d = raw_config.get("display")
     return DisplayGeometry.from_dict(d) if d else None
+
+
+def aoi_config_content_sha256(raw_config: dict) -> str:
+    """
+    AOI設定の中身のハッシュ。読み込んだ JSON をキー順・区切りを揃えて書き出してから求めるので、
+    改行コード（Windows の CRLF / LF）や字下げの違いでは変わらない。セッション間で AOI 定義が同じかの判定に使う。
+    """
+    text = json.dumps(raw_config, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def sanity_check_coordinates(aois: list[dict], coordinate_system) -> list[str]:

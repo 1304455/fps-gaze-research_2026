@@ -220,8 +220,9 @@ class TestSplitting:
             assert res["metrics_session"].set_index("aoi").loc["crosshair", "visit_count"] == visits
 
     def test_visit_merge_disabled(self, aois):
+        # visit_merge_max_gap_ms = max_gap_ms にすると、注視を分割する欠測ではすべて訪問も切る
         pts = hold(CROSSHAIR, 20) + [None] * 9 + hold(CROSSHAIR, 20)
-        res = run(pts, aois, visit_merge_max_gap_ms=0.0)
+        res = run(pts, aois, visit_merge_max_gap_ms=75.0)
         assert res["metrics_session"].set_index("aoi").loc["crosshair", "revisit_count"] == 1
 
     def test_transition_across_blink_is_counted(self, aois):
@@ -507,7 +508,7 @@ class TestMeasuredEyeDistance:
     def test_fixed_source_ignores_measured(self, aois):
         df = make_df(hold(CROSSHAIR, 30), eye_z_mm=575.0)
         res = gm.analyze_session(df, aois, DISPLAY, gm.merge_params({"eye_screen_distance_source": "fixed"}), None)
-        assert res["eye_distance_used"] == {"mm": 650.0, "source": "fixed"}
+        assert res["eye_distance_used"] == {"mm": 650.0, "source": "fixed", "reference_mm": 650.0}
 
     def test_measured_requires_eye_columns(self, aois):
         df = make_df(hold(CROSSHAIR, 30), eye_z_mm=None)

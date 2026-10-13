@@ -61,7 +61,7 @@ DEFAULT_PARAMS = {
     #   "measured"：セッションごとに、分析区間内の有効な gaze_origin z（眼−トラッカー距離）の中央値を使う（主解析）
     #   "fixed"   ：eye_screen_distance_mm をそのまま使う（感度分析。analysis_params_sensitivity_fixed650.json）
     #   "manifest"：台帳の eye_screen_distance_cm を使う
-    # measured のとき eye_screen_distance_mm は計算に使わず、基準値として qc.json に残すだけ
+    # measured / manifest のとき eye_screen_distance_mm は計算に使わず、基準値として qc.json に残すだけ
     "eye_screen_distance_mm": 650.0,
     "eye_screen_distance_source": "measured",
     # I-DT（Salvucci & Goldberg, 2000）
@@ -81,24 +81,47 @@ DEFAULT_PARAMS = {
     # 訪問・遷移の判定で「つながっている」とみなす欠測の長さの上限 [ms]（2026-10-09 合意）。
     # 瞬目（blink）による欠測でこれ以下なら、前後の注視を同じ訪問の続き（同一AOIなら再訪にしない）、
     # 別AOIなら遷移として扱う。超える欠測は追跡ロスとみなし、訪問・遷移を切る。
-    # 座標の補間はしない（注視は max_gap_ms で分割したまま）。0 にすると欠測で必ず切る
+    # 座標の補間はしない（注視は max_gap_ms で分割したまま）。
+    # max_gap_ms 以上にすること（同じチャンク内の欠測は max_gap_ms 以下なので、訪問の判定では 0 とみなしている）。
+    # max_gap_ms と同じ値にすると、注視を分割する欠測ではすべて訪問も切る
     "visit_merge_max_gap_ms": 200.0,
 }
 
 
 def merge_params(user_params: "dict | None") -> dict:
-    """既定値にユーザー指定を上書きした解析パラメータを返す。未知のキーはエラー。"""
+    """既定値にユーザー指定を上書きした解析パラメータを返す。未知のキー・矛盾する組み合わせはエラー。"""
     params = copy.deepcopy(DEFAULT_PARAMS)
     if user_params:
         unknown = sorted(set(user_params) - set(DEFAULT_PARAMS) - {"_comment"})
         if unknown:
             raise ValueError(f"未知の解析パラメータがあります: {unknown}")
+        # 既定の source は measured なので、距離だけ指定すると計算に使われず基準値として残るだけになる
+        if "eye_screen_distance_mm" in user_params and "eye_screen_distance_source" not in user_params:
+            raise ValueError("eye_screen_distance_mm を指定する場合は eye_screen_distance_source も指定してください"
+                             "（fixed：その距離で換算する / measured：実測値で換算し、指定値は基準値として残す）。")
         params.update({k: v for k, v in user_params.items() if k != "_comment"})
     if params["duration_time_column"] not in ("pc_time_sec", "system_time_stamp_us"):
         raise ValueError("duration_time_column は pc_time_sec か system_time_stamp_us です。")
     if params["eye_screen_distance_source"] not in ("measured", "fixed", "manifest"):
         raise ValueError("eye_screen_distance_source は measured / fixed / manifest のいずれかです。")
+    if float(params["visit_merge_max_gap_ms"]) < float(params["max_gap_ms"]):
+        raise ValueError(f"visit_merge_max_gap_ms（{params['visit_merge_max_gap_ms']}）は max_gap_ms"
+                         f"（{params['max_gap_ms']}）以上にしてください（注視の内部の欠測で訪問は切れないため）。")
     return params
+
+
+def read_csv_text(path, **kwargs) -> pd.DataFrame:
+    """
+    実験者が編集する CSV（台帳・区間ファイル）を読む。UTF-8（BOM 付き可）で読めなければ、
+    Excel の既定の「CSV（コンマ区切り）」の文字コード cp932 で読み直して警告する。
+    """
+    try:
+        return pd.read_csv(path, encoding="utf-8-sig", **kwargs)
+    except UnicodeDecodeError:
+        df = pd.read_csv(path, encoding="cp932", **kwargs)
+        print(f"⚠ 警告: {path} を cp932（Excel の既定の CSV）として読みました。"
+              "Excel では『CSV UTF-8（コンマ区切り）』で保存してください。")
+        return df
 
 
 def all_categories(aois: list[dict]) -> list[str]:
@@ -136,6 +159,11 @@ def duration_time_seconds(df: pd.DataFrame, column: str) -> np.ndarray:
     t = pd.to_numeric(df[column], errors="coerce").to_numpy(dtype=float)
     if np.isnan(t).any():
         raise ValueError(f"時刻列 {column} に欠測があります。pc_time_sec を使ってください。")
+    # 区間付与・注視の並びは pc_time_sec、チャンク分割・注視時間はこの列で決まるので、逆行すると両者が食い違う
+    n_back = int((np.diff(t) < 0).sum())
+    if n_back:
+        raise ValueError(f"時刻列 {column} が {n_back} か所で逆行しています。--params で "
+                         '"duration_time_column": "pc_time_sec" を指定すれば解析できます（その旨を記録すること）。')
     return (t - t[0]) / 1e6
 
 
@@ -193,10 +221,12 @@ def segments_from_video_time(seg_df: pd.DataFrame, offset_sec: float, segment_ty
     return seg
 
 
-def segment_sample_counts(samples: pd.DataFrame, segments: pd.DataFrame) -> pd.DataFrame:
+def segment_sample_counts(samples: pd.DataFrame, segments: pd.DataFrame, sample_dt: float) -> pd.DataFrame:
     """
     区間ごとのサンプル数と有効サンプル数。サンプルが0件の区間も行として残す
     （groupby だけだと0件の区間が消え、「区間が記録の外にある」ことに気づけない）。
+    coverage = 行数 / (区間長 ÷ 名目サンプル間隔)。区間の一部が記録の外にはみ出していると 1 より小さくなる
+    （valid_rate は存在する行だけで計算されるので、これでしか分からない）。
     """
     ids = segments["segment_id"].astype(int).to_numpy()
     in_seg = samples[samples["segment_id"].notna()]
@@ -204,6 +234,9 @@ def segment_sample_counts(samples: pd.DataFrame, segments: pd.DataFrame) -> pd.D
     out = g.reindex(ids, fill_value=0)
     out.index.name = "segment_id"
     out["valid_rate"] = (out["n_valid"] / out["n_samples"]).where(out["n_samples"] > 0)
+    duration = (segments["gaze_end_sec"] - segments["gaze_start_sec"]).to_numpy(dtype=float)
+    out["expected_samples"] = duration / sample_dt if sample_dt > 0 else np.nan
+    out["coverage"] = out["n_samples"] / out["expected_samples"]
     return out.reset_index()
 
 
@@ -364,15 +397,23 @@ def detect_fixations_idt(t: np.ndarray, ax: np.ndarray, ay: np.ndarray, *,
 # ---------------------------------------------------------------------------
 
 def analyze_session(df: pd.DataFrame, aois: list[dict], display: DisplayGeometry,
-                    params: dict, segments: "pd.DataFrame | None") -> dict:
+                    params: dict, segments: "pd.DataFrame | None",
+                    manifest_distance_mm: "float | None" = None) -> dict:
     """
     1セッション分を解析し、出力用の DataFrame と QC 用の値を dict で返す。
 
     df       : 視線CSVをそのまま読んだもの（行の削除・並べ替えはしない）
     segments : segments_from_video_time() の結果。None なら記録全体を1区間とする
+    manifest_distance_mm : eye_screen_distance_source=manifest のときの台帳の距離。
+                           params は書き換えない（eye_screen_distance_mm は基準値として残す）
     """
     validate_columns(df)
-    distance_mm = float(params["eye_screen_distance_mm"])
+    reference_mm = float(params["eye_screen_distance_mm"])
+    distance_mm = reference_mm
+    if params["eye_screen_distance_source"] == "manifest":
+        if manifest_distance_mm is None:
+            raise ValueError("eye_screen_distance_source=manifest ですが、台帳の距離が渡されていません。")
+        distance_mm = float(manifest_distance_mm)
     cats = all_categories(aois)
     aoi_names = [a["name"] for a in aois]
 
@@ -409,10 +450,11 @@ def analyze_session(df: pd.DataFrame, aois: list[dict], display: DisplayGeometry
         distance_mm = eye_distance["median_mm"]
         eye_distance_used = {"mm": distance_mm, "source": "measured",
                              "detail": "分析区間内の有効な gaze_origin z（左右眼をまとめた全サンプル）の中央値",
-                             "reference_mm": float(params["eye_screen_distance_mm"]),
+                             "reference_mm": reference_mm,
                              **{k: eye_distance[k] for k in ("p05_mm", "p95_mm", "n")}}
     else:
-        eye_distance_used = {"mm": distance_mm, "source": params["eye_screen_distance_source"]}
+        eye_distance_used = {"mm": distance_mm, "source": params["eye_screen_distance_source"],
+                             "reference_mm": reference_mm}
 
     # サンプル位置のAOI（Gaze % 用）
     sample_aoi = assign_aoi(x, y, aois)

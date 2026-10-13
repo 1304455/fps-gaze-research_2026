@@ -13,6 +13,8 @@ AOI 解析スクリプト ver.3（I-DT 注視検出・分析区間対応）
 4. 画面外の有効サンプル（offscreen）を outside と区別する。どの辺の外かを QC に残す
 5. 全カテゴリ（設定AOI + outside + offscreen）の行を常に出力する（0件も明示）
 6. 定義・パラメータ・入力ハッシュ・git コミットを qc.json に残す（provenance）
+7. 出力先に条件（パラメータ・AOI・入力CSV・区間ファイル・同期）の違う結果があれば、解析の前に中止する
+   （--overwrite で上書き）。感度分析は --output-dir を分ける
 
 ロジック本体は gaze_metrics.py / aoi_geometry.py（テストから import するため）。
 
@@ -45,11 +47,16 @@ if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
 import gaze_metrics as gm  # noqa: E402
-from aoi_geometry import find_overlapping_aois, get_display, load_aoi_config  # noqa: E402
+from aoi_geometry import (  # noqa: E402
+    aoi_config_content_sha256, find_overlapping_aois, get_display, load_aoi_config,
+)
 
-SCRIPT_VERSION = "3.1.0-idt-segments"
+SCRIPT_VERSION = "3.2.0-idt-segments"
 _PROJECT_ROOT = _THIS_DIR.parent.parent
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "processed" / "aoi_result"
+# 区間の行数が「区間長 ÷ サンプル間隔」のこの割合を下回ったら警告する（記録の範囲から区間がはみ出している疑い）。
+# 警告だけで除外はしない（除外基準は aggregate_sessions の min_segment_coverage で別に決める）
+LOW_COVERAGE_WARN = 0.9
 
 
 def sha256_of(path: Path) -> str:
@@ -107,7 +114,7 @@ def load_sync(args) -> dict:
 def load_manifest_row(path: "str | None", session_base: str) -> "dict | None":
     if not path:
         return None
-    m = pd.read_csv(path, dtype=str, encoding="utf-8-sig")
+    m = gm.read_csv_text(path, dtype=str)
     if "session_base" not in m.columns:
         raise SystemExit("エラー: セッション台帳に session_base 列がありません。")
     hit = m[m["session_base"] == session_base]
@@ -149,25 +156,44 @@ def check_resolution(manifest_row: "dict | None", display, allow_mismatch: bool)
     return result
 
 
-def compare_with_proc(df: pd.DataFrame, samples: pd.DataFrame, proc_path: str) -> dict:
+def compare_with_proc(samples: pd.DataFrame, proc_path: str, sample_dt: float) -> dict:
     """
     旧方式（Excelで行削除した *_proc.csv）と新方式（区間ファイル）で、
-    分析対象の有効サンプルがどれだけ一致するかを pc_time_sec で突き合わせる（T3-3）。
+    分析対象の有効サンプルがどれだけ一致するかを突き合わせる（T3-3）。
+    Excel で保存した CSV は pc_time_sec が表示桁に丸められるので、時刻の完全一致ではなく、
+    元の CSV で最も近い時刻の行（許容幅 sample_dt/2）に対応付けて、行の集合で比べる。
     """
     proc = pd.read_csv(proc_path)
     gm.validate_columns(proc)
     proc_valid = gm.compute_valid_mask(proc)
-    old_t = set(np.round(pd.to_numeric(proc.loc[proc_valid, "pc_time_sec"]).to_numpy(), 6))
-    new_t = set(np.round(samples.loc[samples["valid"] & samples["segment_id"].notna(), "pc_time_sec"].to_numpy(), 6))
-    both = old_t & new_t
+    old_t = pd.to_numeric(proc.loc[proc_valid, "pc_time_sec"], errors="coerce").dropna().to_numpy(dtype=float)
+
+    t_all = samples["pc_time_sec"].to_numpy(dtype=float)
+    order = np.argsort(t_all, kind="stable")
+    ts = t_all[order]
+    tol = sample_dt / 2.0
+    old_rows = set()
+    n_unmatched = 0
+    if len(ts) and len(old_t):
+        pos = np.searchsorted(ts, old_t)
+        lo = np.clip(pos - 1, 0, len(ts) - 1)
+        hi = np.clip(pos, 0, len(ts) - 1)
+        nearest = np.where(np.abs(ts[lo] - old_t) <= np.abs(ts[hi] - old_t), lo, hi)
+        matched = np.abs(ts[nearest] - old_t) <= tol
+        n_unmatched = int((~matched).sum())
+        old_rows = set(order[nearest[matched]].tolist())
+    new_rows = set(np.flatnonzero((samples["valid"] & samples["segment_id"].notna()).to_numpy()).tolist())
+    both = old_rows & new_rows
     return {
         "proc_file": str(Path(proc_path).resolve()),
-        "n_valid_old_proc": len(old_t),
-        "n_valid_new_segments": len(new_t),
+        "match_rule": f"pc_time_sec の最近傍の行（許容幅 ±{tol * 1000:.1f} ms）",
+        "n_valid_old_proc": int(len(old_t)),
+        "n_unmatched_old": n_unmatched,
+        "n_valid_new_segments": len(new_rows),
         "n_common": len(both),
-        "n_only_old": len(old_t - new_t),
-        "n_only_new": len(new_t - old_t),
-        "jaccard": (len(both) / len(old_t | new_t)) if (old_t | new_t) else math.nan,
+        "n_only_old": len(old_rows - new_rows),
+        "n_only_new": len(new_rows - old_rows),
+        "jaccard": (len(both) / len(old_rows | new_rows)) if (old_rows | new_rows) else math.nan,
     }
 
 
@@ -204,11 +230,39 @@ def build_arg_parser():
     return p
 
 
-def check_existing_output(out_dir: Path, params: dict, aoi_sha256: str, overwrite: bool) -> None:
+def output_differences(old_qc: dict, params: dict, inputs: dict, sync: dict) -> list[str]:
     """
-    出力先に既存の結果（qc.json）があり、解析パラメータか AOI 設定が今回と違う場合は上書きしない。
-    感度分析（例：analysis_params_sensitivity_fixed650.json）を既定の出力先で実行して、
+    既存の qc.json と今回の実行で、結果を変える条件（解析パラメータ・AOI 設定・入力 CSV・区間ファイル・同期）の違いを列挙する。
+    AOI は中身のハッシュ（改行コードに依存しない）で比べ、古い qc.json に無ければファイルの sha256 で比べる。
+    """
+    old_params = old_qc.get("params") or {}
+    diffs = [f"params.{k}" for k in sorted(set(params) | set(old_params)) if params.get(k) != old_params.get(k)]
+    old_inputs = old_qc.get("inputs") or {}
+    old_aoi, aoi = old_inputs.get("aoi_config") or {}, inputs["aoi_config"]
+    if old_aoi.get("content_sha256") is not None:
+        if old_aoi["content_sha256"] != aoi["content_sha256"]:
+            diffs.append("AOI設定（中身）")
+    elif old_aoi.get("sha256") != aoi["sha256"]:
+        diffs.append("AOI設定ファイル（sha256）")
+    if (old_inputs.get("gaze_csv") or {}).get("sha256") != inputs["gaze_csv"]["sha256"]:
+        diffs.append("入力の視線CSV（sha256）")
+    old_seg, seg = old_inputs.get("segments_file"), inputs["segments_file"]
+    if (old_seg is None) != (seg is None):
+        diffs.append("区間ファイルの有無（" + ("あり → なし（記録全体）" if seg is None else "なし → あり") + "）")
+    elif seg is not None and old_seg.get("sha256") != seg["sha256"]:
+        diffs.append("区間ファイルの中身（sha256）")
+    old_off, off = (old_qc.get("sync") or {}).get("offset_sec"), sync.get("offset_sec")
+    if (old_off is None) != (off is None) or (off is not None and abs(float(old_off) - float(off)) > 1e-9):
+        diffs.append(f"同期オフセット（{old_off} → {off}）")
+    return diffs
+
+
+def check_existing_output(out_dir: Path, params: dict, inputs: dict, sync: dict, overwrite: bool) -> None:
+    """
+    出力先に既存の結果（qc.json）があり、結果を変える条件が今回と違う場合は上書きしない。
+    感度分析を既定の出力先で実行する・区間ファイルを付け忘れて再実行する、などで
     主解析の結果を黙って置き換えてしまうのを防ぐ。同じ条件での再実行は上書きしてよい。
+    解析（I-DT）の前に呼ぶ（中止する場合に解析時間を無駄にしないため）。
     """
     qc_path = out_dir / "qc.json"
     if overwrite or not qc_path.exists():
@@ -218,17 +272,13 @@ def check_existing_output(out_dir: Path, params: dict, aoi_sha256: str, overwrit
             old = json.load(f)
     except (OSError, ValueError):
         raise SystemExit(f"エラー: 既存の {qc_path} を読めません。確認してから --overwrite で上書きしてください。")
-    diffs = sorted(k for k in set(params) | set(old.get("params", {}))
-                   if params.get(k) != old.get("params", {}).get(k))
-    old_sha = ((old.get("inputs") or {}).get("aoi_config") or {}).get("sha256")
-    if old_sha != aoi_sha256:
-        diffs.append("AOI設定ファイル（sha256）")
+    diffs = output_differences(old, params, inputs, sync)
     if diffs:
         raise SystemExit(
             f"エラー: {out_dir} には条件の違う解析結果があります（違い: {diffs}）。\n"
-            "  主解析の結果を上書きしないよう中止しました。感度分析は出力先を分けてください。例：\n"
+            "  既存の結果を上書きしないよう中止しました。感度分析は出力先を分けてください。例：\n"
             "    --output-dir .\\data\\processed\\aoi_result_fixed650\n"
-            "  意図して置き換える場合だけ --overwrite を付けてください。")
+            "  区間ファイルや同期を直して解析し直すなど、意図して置き換える場合だけ --overwrite を付けてください。")
 
 
 def main(argv=None):
@@ -251,31 +301,51 @@ def main(argv=None):
     resolution_check = check_resolution(manifest_row, display, args.allow_resolution_mismatch)
 
     distance_note = "固定値（eye_screen_distance_mm）"
+    manifest_distance_mm = None
     if params["eye_screen_distance_source"] == "manifest":
         val = (manifest_row or {}).get("eye_screen_distance_cm")
         if not val:
             raise SystemExit("エラー: eye_screen_distance_source=manifest ですが、台帳に eye_screen_distance_cm がありません。")
-        params["eye_screen_distance_mm"] = float(val) * 10.0
-        distance_note = "セッション台帳の実測値（eye_screen_distance_cm × 10）"
+        manifest_distance_mm = float(val) * 10.0
+        distance_note = "セッション台帳の実測値（eye_screen_distance_cm × 10）。params.eye_screen_distance_mm は基準値"
 
     # --- 入力 ---
-    df = pd.read_csv(input_path)
     sync = load_sync(args)
     if args.segments:
         if sync["offset_sec"] is None:
             raise SystemExit("エラー: 区間ファイルを使う場合は --sync か --offset が必要です（区間は動画時刻のため）。")
-        seg_raw = pd.read_csv(args.segments, encoding="utf-8-sig")
-        segments = gm.segments_from_video_time(seg_raw, sync["offset_sec"], params["segment_types"])
+        seg_raw = gm.read_csv_text(args.segments)
+        try:
+            segments = gm.segments_from_video_time(seg_raw, sync["offset_sec"], params["segment_types"])
+        except ValueError as e:
+            raise SystemExit(f"エラー: 区間ファイル {args.segments}: {e}")
         if segments.empty:
             raise SystemExit(f"エラー: segment_type が {params['segment_types']} の区間がありません。")
     else:
         segments = None
         print("⚠ 警告: 区間ファイルが指定されていません。記録全体（購入フェーズ・観戦を含む）を1区間として解析します。"
-              "卒論の主解析には使わないでください。")
+              "卒論の主解析には使わないでください（aggregate_sessions は既定でこの結果を合算しません）。")
+    inputs = {
+        "gaze_csv": {"path": str(input_path.resolve()), "sha256": sha256_of(input_path)},
+        "aoi_config": {"path": str(Path(args.aoi).resolve()), "sha256": sha256_of(Path(args.aoi)),
+                       "content_sha256": aoi_config_content_sha256(raw_aoi)},
+        "params_file": ({"path": str(Path(args.params).resolve()), "sha256": sha256_of(Path(args.params))}
+                        if args.params else None),
+        "segments_file": ({"path": str(Path(args.segments).resolve()), "sha256": sha256_of(Path(args.segments))}
+                          if args.segments else None),
+        "manifest_file": str(Path(args.manifest).resolve()) if args.manifest else None,
+    }
+
+    # 上書きの可否は解析の前に判定する
+    out_dir = Path(args.output_dir) / session_base
+    if out_dir.resolve().is_relative_to((_PROJECT_ROOT / "data" / "raw").resolve()):
+        raise SystemExit("エラー: data/raw の下には出力しません。")
+    check_existing_output(out_dir, params, inputs, sync, args.overwrite)
 
     # --- 解析 ---
+    df = pd.read_csv(input_path)
     try:
-        res = gm.analyze_session(df, aois, display, params, segments)
+        res = gm.analyze_session(df, aois, display, params, segments, manifest_distance_mm)
     except ValueError as e:
         raise SystemExit(f"エラー: {e}")
     if params["eye_screen_distance_source"] == "measured":
@@ -286,7 +356,7 @@ def main(argv=None):
               f"（5〜95%: {used['p05_mm']:.0f}〜{used['p95_mm']:.0f} mm）")
 
     # 区間ごとのサンプル数（0件の区間も残す）。全区間が0件なら同期・区間の誤りなので止める
-    seg_counts = gm.segment_sample_counts(res["samples"], res["segments"])
+    seg_counts = gm.segment_sample_counts(res["samples"], res["segments"], res["sample_dt"])
     round_of = dict(zip(res["segments"]["segment_id"].astype(int), res["segments"]["round"]))
     empty_ids = seg_counts.loc[seg_counts["n_samples"] == 0, "segment_id"].astype(int).tolist()
     if empty_ids and len(empty_ids) == len(seg_counts):
@@ -295,12 +365,14 @@ def main(argv=None):
     if empty_ids:
         print(f"⚠ 警告: 視線サンプルが0件の区間があります（round={[round_of[i] for i in empty_ids]}）。"
               "区間が記録の範囲外にないか確認してください。")
+    # 一部だけ記録の外にはみ出した区間（計測が途中で止まった等）。valid_rate では分からない
+    low_cov_ids = seg_counts.loc[(seg_counts["n_samples"] > 0) & (seg_counts["coverage"] < LOW_COVERAGE_WARN),
+                                 "segment_id"].astype(int).tolist()
+    if low_cov_ids:
+        print(f"⚠ 警告: 区間の長さに対して視線サンプルが少ない区間があります（round={[round_of[i] for i in low_cov_ids]}、"
+              f"coverage < {LOW_COVERAGE_WARN}）。区間の一部が記録の範囲外にないか確認してください。")
 
     # --- 出力 ---
-    out_dir = Path(args.output_dir) / session_base
-    if out_dir.resolve().is_relative_to((_PROJECT_ROOT / "data" / "raw").resolve()):
-        raise SystemExit("エラー: data/raw の下には出力しません。")
-    check_existing_output(out_dir, params, sha256_of(Path(args.aoi)), args.overwrite)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     def write(df_out: pd.DataFrame, name: str, index=False):
@@ -321,15 +393,7 @@ def main(argv=None):
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "script": {"name": Path(__file__).name, "version": SCRIPT_VERSION, "git_commit": git_commit()},
         "session_base": session_base,
-        "inputs": {
-            "gaze_csv": {"path": str(input_path.resolve()), "sha256": sha256_of(input_path)},
-            "aoi_config": {"path": str(Path(args.aoi).resolve()), "sha256": sha256_of(Path(args.aoi))},
-            "params_file": ({"path": str(Path(args.params).resolve()), "sha256": sha256_of(Path(args.params))}
-                            if args.params else None),
-            "segments_file": ({"path": str(Path(args.segments).resolve()), "sha256": sha256_of(Path(args.segments))}
-                              if args.segments else None),
-            "manifest_file": str(Path(args.manifest).resolve()) if args.manifest else None,
-        },
+        "inputs": inputs,
         "sync": sync,
         "params": params,
         "eye_screen_distance_used": {**res["eye_distance_used"], "note": distance_note},
@@ -380,6 +444,10 @@ def main(argv=None):
             },
             "n_samples_by_segment": {str(int(r.segment_id)): int(r.n_samples) for r in seg_counts.itertuples()},
             "empty_segment_rounds": [round_of[i] for i in empty_ids],
+            "sample_coverage_by_segment": {str(int(r.segment_id)): float(r.coverage) for r in seg_counts.itertuples()},
+            "min_segment_coverage": float(seg_counts["coverage"].min()) if len(seg_counts) else None,
+            "low_coverage_rounds": [round_of[i] for i in low_cov_ids],
+            "coverage_definition": "区間内の行数 / (区間長 ÷ 名目サンプル間隔)。区間の一部が記録の範囲外だと 1 より小さい",
             "nominal_sample_interval_sec": res["sample_dt"],
             "n_fixations": int(len(res["fixations"])),
             "offscreen": gm.offscreen_summary(samples),
@@ -391,7 +459,7 @@ def main(argv=None):
         "resolution_check": resolution_check,
     }
     if args.compare_proc:
-        qc["compare_with_proc"] = compare_with_proc(df, samples, args.compare_proc)
+        qc["compare_with_proc"] = compare_with_proc(samples, args.compare_proc, res["sample_dt"])
     with open(out_dir / "qc.json", "w", encoding="utf-8") as f:
         json.dump(to_jsonable(qc), f, ensure_ascii=False, indent=2)
 

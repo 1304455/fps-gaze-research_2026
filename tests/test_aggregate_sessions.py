@@ -22,7 +22,7 @@ def write_session(root, name, points):
     qc = {
         "session_base": name,
         "params": gm.merge_params(None),
-        "inputs": {"aoi_config": {"sha256": "x"}},
+        "inputs": {"aoi_config": {"sha256": "x"}, "segments_file": {"sha256": "seg"}},
         "sync": {"method": "metadata_confirmed_based", "within_expected_band": True},
         "data_quality": {"valid_rate_in_segments": 0.6 if name.endswith("b") else 0.95,
                          "analysis_time_sec": 100.0, "n_segments": 1},

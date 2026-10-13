@@ -16,16 +16,29 @@
 --------------------
 python .\\src\\analysis\\aggregate_sessions.py --manifest .\\data\\sessions_manifest.csv `
     --qc-criteria .\\data\\qc_criteria.json
+# 感度分析（650 mm 固定）の集計は出力先を分ける（同じ出力先に別の --results-dir の集計があると中止する）
+python .\\src\\analysis\\aggregate_sessions.py --manifest .\\data\\sessions_manifest.csv `
+    --results-dir .\\data\\processed\\aoi_result_fixed650 --out-dir .\\data\\processed\\aggregate_fixed650
+
+区間ファイルなし（記録全体）で解析した結果は既定で合算しない（--allow-whole-session）。
+台帳は Excel で編集したら『CSV UTF-8（コンマ区切り）』で保存する（cp932 でも警告付きで読む）。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+_AOI_DIR = Path(__file__).resolve().parent.parent / "aoi_detector"
+if str(_AOI_DIR) not in sys.path:
+    sys.path.insert(0, str(_AOI_DIR))
+
+from gaze_metrics import read_csv_text  # noqa: E402
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_RESULTS_DIR = _PROJECT_ROOT / "data" / "processed" / "aoi_result"
@@ -50,8 +63,11 @@ DEFAULT_QC_CRITERIA = {
     "max_eye_distance_deviation_mm": None,
     # I-DT の視角換算に実際に使った距離（qc.json の eye_screen_distance_used.mm）と基準値（650 mm）の差の上限
     "max_eye_distance_from_reference_mm": None,
+    # 区間の行数 / (区間長 ÷ サンプル間隔) の最小値の下限（区間の一部が記録の範囲外にあるセッションの検出）
+    "min_segment_coverage": None,
 }
 GROUP_MISSING_LABEL = "未記入"
+GROUP_VALUES = ("low", "high")
 # 全セッションで一致していなければならない解析パラメータ（違うと合算できない）
 PARAMS_MUST_MATCH = [
     "idt_min_duration_ms", "idt_max_dispersion_deg", "max_gap_ms", "offscreen_in_denominator",
@@ -88,10 +104,18 @@ def check_params_consistent(qcs: list[dict]) -> list[str]:
     versions = {json.dumps((q.get("script") or {}).get("version")) for q in qcs}
     if len(versions) > 1:
         problems.append(f"aoi_analysis の版（script.version）がセッション間で異なります: {sorted(versions)}")
-    aoi_hash = {q["inputs"]["aoi_config"]["sha256"] for q in qcs}
+    # AOI は中身のハッシュ（改行コードに依存しない）で比べる。古い qc.json に無ければファイルの sha256
+    aoi_cfgs = [q["inputs"]["aoi_config"] for q in qcs]
+    key = "content_sha256" if all(a.get("content_sha256") for a in aoi_cfgs) else "sha256"
+    aoi_hash = {a.get(key) for a in aoi_cfgs}
     if len(aoi_hash) > 1:
-        problems.append(f"AOI設定ファイルがセッション間で異なります（sha256 {len(aoi_hash)}種類）")
+        problems.append(f"AOI設定がセッション間で異なります（{key} {len(aoi_hash)}種類）")
     return problems
+
+
+def whole_session_sessions(qcs: list[dict]) -> list[str]:
+    """区間ファイルなし（記録全体を1区間。購入フェーズ・観戦を含む）で解析されたセッション。"""
+    return [q.get("session_base") for q in qcs if (q.get("inputs") or {}).get("segments_file") is None]
 
 
 def params_warnings(qcs: list[dict]) -> list[str]:
@@ -103,14 +127,43 @@ def params_warnings(qcs: list[dict]) -> list[str]:
     return []
 
 
+def load_manifest(path: Path) -> pd.DataFrame:
+    """
+    台帳を読み、Excel で編集したときに入りがちな揺れを整える。
+    - 全列が空の行（末尾の ",,,," など）は捨てる
+    - 文字列の前後の空白を除く（"low " と "low" を別の群にしないため）。空文字は欠損にする
+    """
+    m = read_csv_text(path, dtype=str)
+    m = m.apply(lambda s: s.str.strip())
+    m = m.replace("", np.nan)
+    return m.dropna(how="all")  # index は CSV のデータ行の位置のまま（エラー表示で行番号に使う）
+
+
 def validate_manifest(manifest: pd.DataFrame) -> None:
-    """台帳の session_base の重複はエラー（merge で指標の行が増え、Gaze % が水増しされるため）。"""
+    """
+    台帳の整合性を検査する。
+    - session_base が空の行（他の列には値がある）・重複はエラー（merge で指標の行が増え、Gaze % が水増しされるため）
+    - 1人の参加者に group が2種類以上（空欄を含む）あるとエラー（参加者が2行に分かれ、どちらの比率も過小になるため）
+    - group が low / high 以外なら警告
+    """
     if "session_base" not in manifest.columns:
         raise SystemExit("エラー: 台帳に session_base 列がありません。")
-    sb = manifest["session_base"].dropna()
+    blank = manifest.index[manifest["session_base"].isna()]
+    if len(blank):
+        raise SystemExit(f"エラー: 台帳に session_base が空の行があります（CSV の {[int(i) + 2 for i in blank]} 行目）。")
+    sb = manifest["session_base"]
     dup = sorted(sb[sb.duplicated()].unique())
     if dup:
         raise SystemExit(f"エラー: 台帳に同じ session_base の行が複数あります: {dup}。1セッション1行にしてください。")
+    if "participant_id" in manifest.columns and "group" in manifest.columns:
+        g = manifest.dropna(subset=["participant_id"]).assign(group=lambda d: d["group"].fillna(""))
+        n_groups = g.groupby("participant_id")["group"].nunique()
+        bad = {pid: sorted(g.loc[g["participant_id"] == pid, "group"].unique()) for pid in n_groups[n_groups > 1].index}
+        if bad:
+            raise SystemExit(f"エラー: 同じ参加者に group が複数あります（空欄は ''）: {bad}。1人1群にそろえてください。")
+        odd = sorted(set(manifest["group"].dropna()) - set(GROUP_VALUES))
+        if odd:
+            print(f"⚠ 台帳の group に {list(GROUP_VALUES)} 以外の値があります: {odd}（その値の群として集計します）")
 
 
 def master_long(metrics: pd.DataFrame, manifest: "pd.DataFrame | None") -> pd.DataFrame:
@@ -154,7 +207,10 @@ def participant_metrics(metrics: pd.DataFrame, manifest: pd.DataFrame,
             visit_count=("visit_count", "sum"),
             revisit_count=("revisit_count", "sum"),
             ttff_censored_segments=("ttff_censored_segments", "sum"),
-            gaze_pct_defined=("gaze_pct", lambda s: s.notna().all()),
+            # metrics_session と同じく、どれか1セッションで定義されていれば合算値で比率を出す。
+            # 分母0のセッション（gaze_pct=NaN）は分子・分母とも0を足すだけなので、他のセッションの値を消さない。
+            # offscreen を分母から外す設定の offscreen 行は全セッションで NaN なので NaN のまま
+            gaze_pct_defined=("gaze_pct", lambda s: s.notna().any()),
         ).reset_index()
         g = g.join(per_p, on="participant_id").join(n_sess, on="participant_id")
         g["gaze_pct"] = np.where(
@@ -162,7 +218,7 @@ def participant_metrics(metrics: pd.DataFrame, manifest: pd.DataFrame,
             100.0 * g["n_samples_in_aoi"] / g["gaze_pct_denominator_samples"].where(g["gaze_pct_denominator_samples"] > 0),
             np.nan,
         )
-        g["fixations_per_min"] = g["fixation_count"] / (g["valid_time_sec"] / 60.0)
+        g["fixations_per_min"] = (g["fixation_count"] / (g["valid_time_sec"] / 60.0)).where(g["valid_time_sec"] > 0)
         g["mean_fixation_duration_sec"] = (g["total_fixation_duration_sec"] / g["fixation_count"]).where(g["fixation_count"] > 0)
         return g.drop(columns=["gaze_pct_defined"])
 
@@ -204,9 +260,12 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
         "participant_id": (manifest_row or {}).get("participant_id"),
         "group": (manifest_row or {}).get("group"),
         "in_manifest": manifest_row is not None,
+        "has_result": True,
+        "has_segments_file": (qc.get("inputs") or {}).get("segments_file") is not None,
         "valid_rate_in_segments": dq.get("valid_rate_in_segments"),
         "analysis_time_sec": dq.get("analysis_time_sec"),
         "n_segments": dq.get("n_segments"),
+        "min_segment_coverage": dq.get("min_segment_coverage"),
         "n_fixations": dq.get("n_fixations"),
         "offscreen_rate_of_valid": (dq.get("offscreen") or {}).get("rate_of_valid"),
         "offscreen_top": (dq.get("offscreen") or {}).get("n_top"),
@@ -248,6 +307,8 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
     ref_dev = c["max_eye_distance_from_reference_mm"]
     u, r = row["eye_screen_distance_used_mm"], row["eye_screen_distance_reference_mm"]
     flag("eye_distance_from_reference", None if ref_dev is None or u is None or r is None else abs(u - r) > ref_dev)
+    cov_min, cov = c["min_segment_coverage"], row["min_segment_coverage"]
+    flag("low_segment_coverage", None if cov_min is None or cov is None else cov < cov_min)
 
     flags = [row[k] for k in row if k.startswith("flag_")]
     row["exclude_candidate"] = any(f is True for f in flags)
@@ -255,13 +316,45 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
     return row
 
 
+def missing_result_row(manifest_row: dict) -> dict:
+    """台帳にあるのに解析結果が無いセッションの qc_report 行（「出力に無い」を「無い」と区別して残す）。"""
+    return {"session_base": manifest_row.get("session_base"), "participant_id": manifest_row.get("participant_id"),
+            "group": manifest_row.get("group"), "in_manifest": True, "has_result": False,
+            "exclude_candidate": False, "n_criteria_evaluated": 0}
+
+
+def check_existing_aggregate(out_dir: Path, results_dir: Path, overwrite: bool) -> None:
+    """
+    出力先に別の --results-dir（例：感度分析 aoi_result_fixed650）から作った集計があれば上書きしない。
+    主解析の集計が感度分析の値で黙って置き換わるのを防ぐ。
+    """
+    prov = out_dir / "aggregate_provenance.json"
+    if overwrite or not prov.exists():
+        return
+    try:
+        with open(prov, "r", encoding="utf-8") as f:
+            old = json.load(f).get("results_dir")
+    except (OSError, ValueError):
+        raise SystemExit(f"エラー: 既存の {prov} を読めません。確認してから --overwrite で上書きしてください。")
+    if old is not None and Path(old) != results_dir.resolve():
+        raise SystemExit(
+            f"エラー: {out_dir} には別の解析結果（{old}）から作った集計があります。上書きしないよう中止しました。\n"
+            "  感度分析の集計は出力先を分けてください。例：\n"
+            "    --out-dir .\\data\\processed\\aggregate_fixed650\n"
+            "  意図して置き換える場合だけ --overwrite を付けてください。")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="aoi_analysis-ver3 の結果をセッション横断で集計し、QCレポートを作ります。")
     p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     p.add_argument("--manifest", type=Path, required=True, help="セッション台帳CSV")
     p.add_argument("--qc-criteria", type=Path, default=None, help="除外基準JSON（未指定ならフラグは評価しない）")
-    p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
+    p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR,
+                   help="出力先（既定: data/processed/aggregate）。感度分析の集計は別にする（例: aggregate_fixed650）")
     p.add_argument("--allow-mixed-params", action="store_true", help="解析パラメータが違うセッションの合算を許す（非推奨）")
+    p.add_argument("--allow-whole-session", action="store_true",
+                   help="区間ファイルなし（記録全体）で解析したセッションの合算を許す（動作確認用。主解析には使わない）")
+    p.add_argument("--overwrite", action="store_true", help="出力先に別の --results-dir から作った集計があっても上書きする")
     args = p.parse_args(argv)
 
     criteria = dict(DEFAULT_QC_CRITERIA)
@@ -273,11 +366,12 @@ def main(argv=None):
             raise SystemExit(f"エラー: 未知の除外基準があります: {unknown}")
         criteria.update(user)
 
-    manifest = pd.read_csv(args.manifest, dtype=str, encoding="utf-8-sig")
+    manifest = load_manifest(args.manifest)
     validate_manifest(manifest)
     dirs = find_sessions(args.results_dir)
     if not dirs:
         raise SystemExit(f"エラー: {args.results_dir} に解析結果がありません。")
+    check_existing_aggregate(args.out_dir, args.results_dir, args.overwrite)
     loaded = [load_session(d) for d in dirs]
     metrics = pd.concat([m for m, _ in loaded], ignore_index=True)
     qcs = [q for _, q in loaded]
@@ -288,6 +382,12 @@ def main(argv=None):
             print(f"⚠ {pr}")
         if not args.allow_mixed_params:
             raise SystemExit("エラー: 定義の違う結果は合算できません。同じパラメータで解析し直してください。")
+    whole = whole_session_sessions(qcs)
+    if whole:
+        print(f"⚠ 区間ファイルなし（記録全体。購入フェーズ・観戦を含む）で解析したセッション: {whole}")
+        if not args.allow_whole_session:
+            raise SystemExit("エラー: 主解析は分析区間（alive）だけを集計します。区間ファイルを付けて解析し直してください"
+                             "（動作確認として合算する場合だけ --allow-whole-session）。")
     warnings = params_warnings(qcs)
     for w in warnings:
         print(f"⚠ {w}")
@@ -298,6 +398,12 @@ def main(argv=None):
     not_in_manifest = qc_report.loc[~qc_report["in_manifest"], "session_base"].tolist()
     if not_in_manifest:
         print(f"⚠ 台帳に無いセッション（参加者集計から外れます）: {not_in_manifest}")
+    analyzed = {q.get("session_base") for q in qcs}
+    no_result = [sb for sb in mrows if sb not in analyzed]
+    if no_result:
+        print(f"⚠ 台帳にあるが解析結果が無いセッション（qc_report に has_result=False で残します）: {no_result}")
+        qc_report = pd.concat([qc_report, pd.DataFrame([missing_result_row(mrows[sb]) for sb in no_result])],
+                              ignore_index=True)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     master_long(metrics, manifest).to_csv(args.out_dir / "master_long.csv", index=False, encoding="utf-8-sig")
@@ -309,9 +415,15 @@ def main(argv=None):
     with open(args.out_dir / "aggregate_provenance.json", "w", encoding="utf-8") as f:
         json.dump({"sessions": [q.get("session_base") for q in qcs], "qc_criteria": criteria,
                    "params_problems": problems, "params_warnings": warnings,
-                   "manifest": str(args.manifest.resolve())},
+                   "manifest": str(args.manifest.resolve()),
+                   "results_dir": str(args.results_dir.resolve()),
+                   # 全セッションで一致を確認済みの解析パラメータ（--allow-mixed-params のときは先頭セッションの値）
+                   "params": qcs[0].get("params"),
+                   "eye_screen_distance_source": (qcs[0].get("params") or {}).get("eye_screen_distance_source"),
+                   "whole_session_sessions": whole,
+                   "manifest_sessions_without_results": no_result},
                   f, ensure_ascii=False, indent=2)
-    n_flag = int(qc_report["exclude_candidate"].sum())
+    n_flag = int(qc_report["exclude_candidate"].astype(bool).sum())
     print(f"セッション数: {len(qcs)}  除外候補: {n_flag}  （評価した基準数: {int(qc_report['n_criteria_evaluated'].max())}）")
     print(f"完了: {args.out_dir}")
 

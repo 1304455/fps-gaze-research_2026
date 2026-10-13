@@ -87,7 +87,7 @@ class TestSegments:
         ])
         seg = gm.segments_from_video_time(raw, 0.0, ["alive"])
         res = gm.analyze_session(make_df(hold(CROSSHAIR, 60)), aois, DISPLAY, gm.merge_params(None), seg)
-        counts = gm.segment_sample_counts(res["samples"], res["segments"]).set_index("segment_id")
+        counts = gm.segment_sample_counts(res["samples"], res["segments"], res["sample_dt"]).set_index("segment_id")
         assert counts.loc[0, "n_samples"] == 30
         assert counts.loc[1, "n_samples"] == 0
         assert pd.isna(counts.loc[1, "valid_rate"])
