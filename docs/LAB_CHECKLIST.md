@@ -77,6 +77,18 @@ python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin
       違っていれば設定し直して、キャリブレーション＋検証をやり直す
 - [ ] AOI JSON の `display.width_mm / height_mm` も実測値に合わせる（結果を Claude に伝える）
 
+複数回の結果の比較（2026-10-13 追加。画面設定や margin を変えたときに同じ物差しで比べる）：
+```powershell
+python .\src\analysis\calib_compare.py ".\data\raw\calib_TEST_20261013_*.json"
+python .\src\analysis\calib_compare.py ".\data\raw\calib_TEST_*.json" --group-by display_angle_deg
+```
+- [ ] `vertical_scale_pct`（縦の中央寄り%。0 が理想）と `top_bar_bias_y_deg` / `bottom_bar_bias_y_deg` を条件ごとに比べる
+- [ ] `display_angle_deg` / `display_width_mm` が混ざっていると警告が出る（条件比較では画面設定を揃える）
+
+> 2026-10-13 の結果（今日の4回）：全回合格（平均 0.76〜0.99°）。縦の中央寄りは 2.1〜4.9%、横は約 0〜1%。
+> 10/09 と同じパターンで、画面寸法の設定を変えても残った → 寸法ではなく角度の設定が原因の本命。
+> Spark の角度を測定ごとに手で調整していたことが判明（ETM の角度設定は Regular setup の 20° のまま）。
+
 前回の位置に合わせる（2回目以降のセッション）：
 ```powershell
 python .\src\gaze_estimation\calibrate_validate.py --subject TEST --reference (Get-ChildItem .\data\raw\calib_TEST_*.json | Select-Object -Last 1).FullName
