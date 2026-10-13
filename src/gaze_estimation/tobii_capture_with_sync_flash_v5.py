@@ -146,6 +146,7 @@ import json
 import logging
 import platform
 import queue
+import re
 import secrets
 import socket
 import sys
@@ -207,7 +208,7 @@ except ImportError:
 
 IS_WINDOWS = platform.system() == "Windows"
 
-SCRIPT_VERSION = "5.0.0-eye-origin-pupil"
+SCRIPT_VERSION = "5.0.1-eye-origin-pupil"
 
 # ============================================================================
 # 定数・既定値
@@ -253,15 +254,46 @@ FIELDNAMES = [
 # ロギング
 # ============================================================================
 
+class SecretRedactingFilter(logging.Filter):
+    """ログに秘密情報を残さないためのフィルタ（v5.0.1）。
+
+    - OBS WebSocket のパスワード（obsws-python が接続時に INFO で "password='...'" を出す）は常に伏せる
+    - 制御用 token は redact_token=True のとき伏せる。ログファイルには残さないが、
+      実験者が開始時の URL を読むコンソールには表示する
+    ハンドラに付けるので、ライブラリのロガーから伝播してきたレコードにも効く。
+    """
+
+    _PASSWORD = re.compile(r"(password\s*[=:]\s*)(?:'[^']*'|\"[^\"]*\"|[^\s,)]+)", re.IGNORECASE)
+    _TOKEN = re.compile(r"(token=)[^&\s\"']+")
+
+    def __init__(self, redact_token: bool = False):
+        super().__init__()
+        self.redact_token = redact_token
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:  # noqa: BLE001 書式の壊れたレコードはそのまま通す
+            return True
+        red = self._PASSWORD.sub(r"\1***", msg)
+        if self.redact_token:
+            red = self._TOKEN.sub(r"\1***", red)
+        if red != msg:
+            record.msg = red
+            record.args = None
+        return True
+
+
 def setup_logging(log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.addFilter(SecretRedactingFilter(redact_token=True))
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.addFilter(SecretRedactingFilter(redact_token=False))
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.FileHandler(log_path, encoding="utf-8"),
-            logging.StreamHandler(sys.stdout),
-        ],
+        handlers=[file_handler, console_handler],
     )
 
 
@@ -730,7 +762,9 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
     """
 
     def log_message(self, format, *args):  # noqa: A002 (標準APIのシグネチャに合わせる)
-        logging.info("[ControlHTTP] %s - " + format, self.client_address[0], *args)
+        # ブラウザの /status ポーリング（1秒ごと）は DEBUG に落とす（ログが試合時間 × 1行/秒で埋まるため）
+        level = logging.DEBUG if getattr(self, "path", "").startswith("/status") else logging.INFO
+        logging.log(level, "[ControlHTTP] %s - " + format, self.client_address[0], *args)
 
     def _check_token(self, qs: dict) -> bool:
         required = self.server.token

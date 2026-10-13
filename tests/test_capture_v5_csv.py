@@ -100,3 +100,55 @@ def test_v5_csv_is_backward_compatible(tcap, tmp_path):
     import gaze_metrics as gm
     eye = gm.eye_distance_summary(df)
     assert eye["available"] and eye["median_mm"] == pytest.approx(648.5)
+
+
+def _redact(tcap, msg, *args, redact_token=False):
+    import logging
+    rec = logging.LogRecord("obsws_python.baseclient.ObsClient", logging.INFO, __file__, 1, msg, args, None)
+    tcap.SecretRedactingFilter(redact_token=redact_token).filter(rec)
+    return rec.getMessage()
+
+
+def test_log_redacts_obs_password(tcap):
+    # obsws-python の実際の出力形式（%s 展開前・展開後の両方）
+    msg = _redact(tcap, "Connecting with parameters: host='192.168.0.2' port=4455 password='s3cr3t-Pw' subs=0 timeout=3.0")
+    assert "s3cr3t-Pw" not in msg
+    assert "password=***" in msg and "port=4455" in msg and "subs=0" in msg
+    msg = _redact(tcap, "Connecting with parameters: %s", "host='h' password=\"abc123\" timeout=3")
+    assert "abc123" not in msg
+    assert "password=***" in msg
+
+
+def test_log_redacts_token_only_when_requested(tcap):
+    line = "[ControlHTTP] 192.168.0.5 - \"GET /start?token=vYH_TNXQ3cs HTTP/1.1\" 200 -"
+    assert "vYH_TNXQ3cs" in _redact(tcap, line, redact_token=False)
+    red = _redact(tcap, line, redact_token=True)
+    assert "vYH_TNXQ3cs" not in red and "token=*** HTTP/1.1" in red
+
+
+def test_log_file_does_not_contain_secrets(tcap, tmp_path):
+    import logging
+    root = logging.getLogger()
+    saved = root.handlers[:], root.level
+    root.handlers = []
+    try:
+        log_path = tmp_path / "x_log.txt"
+        tcap.setup_logging(log_path)
+        logging.getLogger("obsws_python.baseclient.ObsClient").warning("password='pw-in-log'")
+        logging.info("制御用HTTPサーバを起動しました: http://10.0.0.1:8765/?token=tok-in-log")
+        for h in root.handlers:
+            h.flush()
+        text = log_path.read_text(encoding="utf-8")
+        assert "pw-in-log" not in text and "tok-in-log" not in text
+        assert "password=***" in text and "token=***" in text
+    finally:
+        for h in root.handlers:
+            h.close()
+        root.handlers, root.level = saved[0], saved[1]
+
+
+def test_obs_controller_quiets_obsws_logger():
+    import logging
+    sys.path.insert(0, str(ROOT))
+    importlib.import_module("src.obs_controller_v2")
+    assert logging.getLogger("obsws_python").getEffectiveLevel() >= logging.WARNING

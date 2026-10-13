@@ -95,7 +95,31 @@ python .\src\gaze_estimation\calibrate_validate.py --subject TEST --reference (G
 ```
 - [ ] 上下の位置も判定に加わり、前回とほぼ同じ姿勢で OK になる
 
+### 2c. Spark の角度の固定と測定（2026-10-13 追加）
+
+Spark の角度を測定ごとに手で変えると、トラッカーが想定する画面（ETM の設定）と実際の画面がずれ、
+上下端で中央寄りのずれが出る。**角度は一度決めたら固定し、個人差は椅子の高さで合わせる。**
+
+1. 標準の椅子の高さで普段どおり座り、`--position-only` でガイドの中央（y ≈ 0）に眼が来るよう Spark の角度を決める
+2. 机と Spark にテープで印を付け、以後触らない（触ったら手順 4〜5 をやり直す）
+3. 分度器で角度を測る（各3回の平均。写真も残す）
+   - 分度器の底辺をミニ水平器で水平に合わせ、利用者側から見た角度を読む
+   - 画面：画面の表面に定規（または硬いカード）を当て、机からの角度 θ_screen を読む（後ろに倒れていれば 90° より大きい）
+   - Spark：前面（黒いセンサー面）にカードを当て、同じ向きで θ_spark を読む
+   - 相対角度 = θ_spark − θ_screen
+   - 確かめ（任意）：画面上端から糸＋重り（5円玉など）を垂らし、上端と下端での画面表面と糸の距離の差 d と
+     表示領域の高さ h から、画面の傾き = atan(d / h)
+4. ETM で相対角度（と画面寸法 596.7×335.6 mm）を入力し直し、較正＋検証を2回
+5. `calib_compare.py` で `display_angle_deg` が入力値になっていること、`vertical_scale_pct` が 1〜2% 以下に下がることを確認
+6. 標準姿勢を記録：`calibrate_validate.py --subject STANDARD --position-only` → 以後の全参加者は
+   `--reference .\data\raw\headpos_STANDARD_<日時>.json` で同じ位置に合わせる（椅子の高さで調整）
+
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
+
+> 2026-10-13 実施（過去の試合映像を視聴）：60.1 Hz、欠測率 0.7%、start_sync（confirmed）23 ms（既知 18.8±2.5 ms の範囲内）。
+> 新8列に値あり。**眼−トラッカー距離の中央値は 575 mm**（較正時は約 645 mm）。視聴中に約 7 cm 前に出ていた。
+> 視線CSVの「sample_gap」警告 30 件中 27 件は PC 側の受信遅延（デバイス時刻の間隔は 16〜17 ms）で、データ欠落ではない。
+> ログに OBS のパスワードが出ていた（obsws-python の INFO ログ）→ v5.0.1 で除去。パスワードは変更すること。
 
 ```powershell
 python .\src\gaze_estimation\tobii_capture_with_sync_flash_v5.py --subject TEST --trial 1 --skip-conditions-prompt --obs-config .\obs_config.json --max-duration 300

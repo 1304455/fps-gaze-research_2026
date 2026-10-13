@@ -43,7 +43,7 @@
 
 ```
 [較正] src/gaze_estimation/calibrate_validate.py  試合前に9点キャリブレーション＋検証 → data/raw/calib_<subject>_<日時>.json
-[計測] src/gaze_estimation/tobii_capture_with_sync_flash_v5.py   (SCRIPT_VERSION 5.0.0-eye-origin-pupil。v4.1 に眼位置z・瞳孔の列を末尾追加)
+[計測] src/gaze_estimation/tobii_capture_with_sync_flash_v5.py   (SCRIPT_VERSION 5.0.1-eye-origin-pupil。v4.1 に眼位置z・瞳孔の列を末尾追加。5.0.1 でログからパスワード・token を除去)
          + src/obs_controller_v2.py  (obsws-python / OBS WebSocket v5 で録画を自動開始・停止)
          → data/raw/gaze_<subject>_<trial>_<condition>_<YYYYMMDD_HHMMSS>.csv / _meta.json / ログ
          開始・停止は同一LAN上の別端末ブラウザから HTTP（既定 port 8765、token 付き）
