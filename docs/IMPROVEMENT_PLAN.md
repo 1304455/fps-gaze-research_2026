@@ -19,18 +19,18 @@
 | T8 | 群間比較の統計スクリプト | P2 | なし |
 | T9 | 配布形態（exe化）の検討 | P2・保留 | — |
 
-### 進捗（2026-10-09 更新）
+### 進捗（2026-10-13 更新）
 
 | ID | 状態 | 実装 | 残っていること |
 |---|---|---|---|
 | T0 | コード対応済み | README からパスワード削除、`.gitignore`、`requirements*.txt`、`screen_name`、import フォールバック | **OBS パスワードの変更**（git履歴に残っている）、Windows の venv で `pip install` 確認 |
-| T1 | コード対応済み | `tobii_capture_with_sync_flash_v5.py`（列を末尾追加、NA 警告）、`docs/templates/sessions_manifest_template.csv` | 研究室PCで5分間テスト |
-| T2 | コード対応済み | `src/gaze_estimation/calibrate_validate.py`（`--check-only` / `--validate-only`） | Spark で SDK キャリブレーションが使えるかの確認、合否閾値の合意 |
+| T1 | コード対応済み | `tobii_capture_with_sync_flash_v5.py`（列を末尾追加、NA 警告。5.0.1 でログの秘密情報を伏せ字、5.1.0 で眼位置 x/y を追加）、`docs/templates/sessions_manifest_template.csv` | 5分間テストは 10/13 に実施（5.0.1）。**5.1.0 で列を追加したので再テスト** |
+| T2 | コード対応済み | `calibrate_validate.py`（頭部位置ガイド、`--reference` で x・y・z を標準姿勢に、測り直しはデータ品質で採否）、`calib_compare.py` | 上下端の中央寄りのずれ（Spark の角度固定後、ETM の角度設定の検証。LAB_CHECKLIST 2c）、合否閾値の合意 |
 | T3 | コード対応済み | `src/visualizer/segment_annotator.py`、`aoi_analysis-ver3.py --compare-proc` | 予備実験1試合での注釈と旧方式との突き合わせ |
-| T4 | コード対応済み | `aoi_analysis-ver3.py` ＋ `gaze_metrics.py` / `aoi_geometry.py`。決定事項1（瞬目の扱い）は合意済みで反映 | 決定事項2〜4の合意（現在は推奨値を既定値にしてパラメータ化）、実データでの I-DT 閾値と 200 ms の妥当性確認 |
+| T4 | コード対応済み | `aoi_analysis-ver3.py`（3.1.0）＋ `gaze_metrics.py` / `aoi_geometry.py`。決定事項1・3・4 は合意済みで反映。条件の違う結果の上書き防止 | 決定事項2（offscreen の分母）の合意、予備実験での I-DT 閾値と 200 ms の妥当性確認 |
 | T5 | 一部対応 | `aoi_check.py`（視角サイズ表、calib との比較、フレーム描画）、AOI JSON に `display` 追加、`radius_deg` 対応、台帳の解像度チェック | crosshair を `radius_deg` で定義し直すか（半径 2° にするなら正規化半径が 0.0351 → 0.0380 に変わる）の決定 |
-| T6 | コード対応済み | `src/analysis/aggregate_sessions.py`、`docs/templates/qc_criteria_template.json` | 除外基準の数値の合意（未合意の間はフラグを評価しない） |
-| T7 | 対応済み | `tests/`（61件） | — |
+| T6 | コード対応済み | `src/analysis/aggregate_sessions.py`（台帳の重複・group 空欄・版の不一致を検出）、`docs/templates/qc_criteria_template.json` | 除外基準の数値の合意（未合意の間はフラグを評価しない） |
+| T7 | 対応済み | `tests/`（113件） | — |
 | T8 | 未着手 | — | 主要比較と検定の合意が先 |
 | T9 | 保留 | — | — |
 
@@ -170,8 +170,12 @@ T1・T2 は研究室PCでの実機確認が必要なので、コードだけ先�
    → 2026-10-09 合意：瞬目は再訪に数えない。注視の分割は 75 ms 超（座標補間なし）、訪問・遷移は 200 ms 以下の欠測をまたいでつなぐ。
      予備実験の欠測長の分布（qc.json `missing_gaps`）で 200 ms が妥当か確認する
 2. `offscreen` を Gaze % の分母に含めるか
-3. 眼−画面距離を固定値（650 mm）にするか、セッションの実測中央値にするか（推奨：主解析は固定値、実測値は感度分析）
-4. 時刻の基準：`pc_time_sec`（ホスト到着時刻）のばらつきを `system_time_stamp_us` と比較し、注視時間の計算にどちらを使うか。まず両者の差分の標準偏差を実データで出して判断材料にする（同期は `pc_time_sec` のまま）
+3. 眼−画面距離を固定値（650 mm）にするか、セッションの実測中央値にするか
+   → 2026-10-13 合意：650 mm は基準。主解析はセッションごとの実測値（分析区間内の眼位置 z の中央値、`measured`）、
+     650 mm 固定は感度分析（`analysis_params_sensitivity_fixed650.json`、出力先を分ける）
+4. 時刻の基準：注視時間と欠測の判定に `pc_time_sec` と `system_time_stamp_us` のどちらを使うか
+   → 2026-10-13 合意：`system_time_stamp_us`。5分間テストで、PC 側の受信遅延 30件中27件はデータ欠落なし、
+     時刻間隔の SD は pc 2.5 ms / system 0.54 ms、欠測件数は 194 → 48 件。区間付与と同期は `pc_time_sec` のまま
 
 ---
 

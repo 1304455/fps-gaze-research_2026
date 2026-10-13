@@ -70,9 +70,9 @@ python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin
 
 画面の物理設定の確認（上下端のずれの原因候補）：
 `aoi_check.py --calib ...` が「画面の設定（トラッカー）」を表示する。2026-10-09 の calib では
-トラッカー側が 607.0×341.4 mm・後ろへの傾き 20.0°、AOI JSON は 596.7×335.6 mm だった。
+トラッカー側が 607.0×341.4 mm・Spark との相対角度 20.0°（ETM の設定値。画面そのものの傾きではない）、AOI JSON は 596.7×335.6 mm だった。
 - [ ] 画面の表示領域（黒枠の内側、映像が出る範囲）の幅・高さを巻尺で実測する
-- [ ] モニターの傾きを実測する（スマートフォンの水準器アプリを画面に当てる。鉛直からの角度）
+- [ ] ~~モニターの傾きを実測する~~ → 10/13：ETM の角度は Spark と画面の相対角度で、外装の角度とは直接比べられないと判明（2c を参照）
 - [ ] Eye Tracker Manager のディスプレイ設定（Spark の取り付け・画面サイズ）と実測値を比べる。
       違っていれば設定し直して、キャリブレーション＋検証をやり直す
 - [ ] AOI JSON の `display.width_mm / height_mm` も実測値に合わせる（結果を Claude に伝える）
@@ -135,6 +135,9 @@ python -c "import pandas as pd, sys; d=pd.read_csv(sys.argv[1]); print(d[['left_
 - [ ] z の中央値と、巻尺で測った眼−画面距離の差を控える（卒論で「近似」として書く材料）
 - [ ] `gaze_visualizer_v3.py auto-sync` と `render` がこの CSV でそのまま動く
 
+> 2026-10-13：v5.1.0 で眼位置 x/y の4列を末尾に追加した。`git pull` 後に短い計測（`--max-duration 60`）で
+> 列が増えていること、コンソールに制御 URL（token 付き）が出てログファイルでは `token=***` になることを確認する。
+
 ## 4. 予備実験データで新旧の解析を比べる（T3・T4）
 
 予備実験の1試合（`_proc.csv` を作ってあるもの）で：
@@ -146,8 +149,10 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 - [ ] 1試合（約13ラウンド）の区間付けが、動画を1回通して見る程度の時間で終わる
 - [ ] `qc.json` の `compare_with_proc.jaccard` が 1 に近い（ずれていれば、どのラウンドの境界かを確認）
 - [ ] 同じ区間で、`gaze_pct` が旧版（archive\aoi_analysis-ver2.py を `_proc.csv` に適用）とほぼ一致する
-- [ ] `qc.json` の `time_base_comparison.interval_difference_sd_ms` を控える（決定事項4の材料）
+- [ ] `qc.json` の `time_base_comparison.interval_difference_sd_ms` を控える（決定事項4は 10/13 に system_time で合意済み。実プレイでも同じ傾向かの確認）
 - [ ] `fixations.csv` の `duration_sec` の分布を見る（I-DT の閾値が自分のデータで妥当かの確認）
+- [ ] 感度分析（距離 650 mm 固定）は出力先を分けて実行する（同じ出力先では条件の違う結果の上書きを拒否する）：
+      `... --params .\src\aoi_detector\analysis_params_sensitivity_fixed650.json --output-dir .\data\processed\aoi_result_fixed650`
 - [ ] `qc.json` の `data_quality.missing_gaps` を見る。瞬目は通常 100〜300 ms 程度なので、
       `200-300ms` の件数が多ければ `visit_merge_max_gap_ms` を 300 にするか検討する。
       `n_same_aoi_visit_breaks_by_long_gap`（長い欠測で切れた同一AOIの訪問数）が再訪数に対して大きくないかも確認

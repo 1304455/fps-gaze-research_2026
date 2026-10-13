@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-sync_calibration_tool.py
+sync_calibration_tool-v2.py
 
 Tobii Pro Spark + OBS の「開始同期オフセット」を実測するための、一回限りの
 検証専用ツール。
@@ -55,7 +55,7 @@ Tobii基準からの経過時間(T+ x.xxx s)」を画面に表示し続ける。
 【使い方】
 
   1. 検証セッションを記録する:
-       python sync_calibration_tool.py record --duration-sec 20
+       python sync_calibration_tool-v2.py record --duration-sec 20
 
      実行するとEnterキー入力待ちになるので、OBS側の映像ソース設定
      (上記前提を参照)を確認してからEnterを押す。指定秒数のあいだ
@@ -71,7 +71,7 @@ Tobii基準からの経過時間(T+ x.xxx s)」を画面に表示し続ける。
      を読み取る。
 
   3. 分析する:
-       python sync_calibration_tool.py analyze \
+       python sync_calibration_tool-v2.py analyze \
            --meta ./sync_calibration_sessions/xxx_meta.json \
            --point 0.52=0.095 \
            --point 18.20=17.804
@@ -433,7 +433,7 @@ def cmd_record(args) -> None:
     print("     最初に読み取れるフレームの再生位置(秒)とT+の値を記録する。")
     print("     (任意) セッション終盤のフレームでも同様にもう1点記録する。")
     print("  2. 以下のようにanalyzeを実行する:")
-    print(f'     python sync_calibration_tool.py analyze --meta "{meta_path}" '
+    print(f'     python sync_calibration_tool-v2.py analyze --meta "{meta_path}" '
           '--point <再生秒>=<T+の値> [--point <再生秒>=<T+の値> ...]')
 
 
