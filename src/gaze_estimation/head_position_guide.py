@@ -105,12 +105,29 @@ def reference_from_calib(calib: dict) -> "dict | None":
     return {"x_mid_mm": rec["x_mid_mm"], "y_mid_mm": rec["y_mid_mm"], "z_mid_mm": rec["z_mid_mm"]}
 
 
+DEFAULT_TARGET_Z_MM = 650.0
+
+
+def resolve_target_distance(target_z_arg: "float | None", reference: "dict | None") -> "tuple[float, str]":
+    """
+    頭部位置ガイドの距離 z の目標を決める（優先順：明示指定 → 基準ファイルの z → 650 mm）。
+    --reference に標準姿勢（headpos_STANDARD_*.json）を渡したとき、z も標準姿勢に合わせるため。
+    戻り値は (目標 z [mm], 出所の説明)。
+    """
+    if target_z_arg is not None:
+        return float(target_z_arg), "--target-distance-mm の指定"
+    if reference and reference.get("z_mid_mm") is not None:
+        return float(reference["z_mid_mm"]), "--reference の記録"
+    return DEFAULT_TARGET_Z_MM, "既定値（650 mm）"
+
+
 # ---------------------------------------------------------------------------
 # 画面表示（研究室PCでのみ動く部分）
 # ---------------------------------------------------------------------------
 
 def run_position_guide(tr, eyetracker, screen, *, target_z_mm: float, tol_z_mm: float, tol_x_mm: float,
-                       reference: "dict | None" = None, tol_y_mm: float = 30.0, flip_x: bool = False) -> dict:
+                       reference: "dict | None" = None, tol_y_mm: float = 30.0, flip_x: bool = False,
+                       target_z_source: str = "") -> dict:
     """
     位置合わせ画面を表示する。SPACE/Enter で確定（範囲外でも確定はできる。その場合 ok=False で記録）、
     ESC で KeyboardInterrupt。screen は calibrate_validate.TargetScreen。
@@ -122,8 +139,6 @@ def run_position_guide(tr, eyetracker, screen, *, target_z_mm: float, tol_z_mm: 
     eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA, collector.callback, as_dictionary=True)
     target_x = reference["x_mid_mm"] if reference else 0.0
     target_y = reference["y_mid_mm"] if reference else None
-    if reference and target_z_mm is None:
-        target_z_mm = reference["z_mid_mm"]
     w, h = screen.w, screen.h
     scale = (h * 0.35) / 150.0          # 正面図：±150 mm を画面高さの 35% に
     cx0, cy0 = w // 2, int(h * 0.5)
@@ -145,7 +160,7 @@ def run_position_guide(tr, eyetracker, screen, *, target_z_mm: float, tol_z_mm: 
                         "messages_at_confirm": verdict["messages"],
                         "target": {"z_mm": target_z_mm, "tol_z_mm": tol_z_mm, "x_mm": target_x,
                                    "tol_x_mm": tol_x_mm, "y_mm": target_y, "tol_y_mm": tol_y_mm,
-                                   "reference_used": reference is not None},
+                                   "reference_used": reference is not None, "z_source": target_z_source},
                         "definition": "直近1秒の gaze_origin（UCS, mm）の平均。z は眼−トラッカー距離",
                     }
             now = time.perf_counter()

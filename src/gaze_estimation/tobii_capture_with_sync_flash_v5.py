@@ -11,6 +11,13 @@ tobii_capture_with_sync_flash_v5.py
     z は *_gaze_origin_in_user_coordinate_system の z（眼−トラッカー距離 [mm]）。
     眼−画面中央距離とは厳密には一致しない（卒論では近似として明記する）。
   - --subject が既定値 NA のまま起動したら警告を出す（止めはしない）
+
+【v5.1.0 の変更（2026-10-13。追加のみ）】
+  - 視線CSVの末尾に眼位置の x/y を追加：
+      left_gaze_origin_x_mm, left_gaze_origin_y_mm, right_gaze_origin_x_mm, right_gaze_origin_y_mm
+    （*_gaze_origin_in_user_coordinate_system の x, y [mm]。z と合わせて眼の3次元位置になり、
+      後から画面までの正確な距離や、眼の位置を考慮した視角を計算し直せる）
+  - ログの秘密情報の伏せ字をフィルタからハンドラごとのフォーマッタに変更（コンソールには制御 URL の token を表示）
   - obs_controller_v2 の import フォールバック先を実ファイル位置（src/）に修正
 
 Tobii Pro Spark 視線データ取得 + OBS同期用フラッシュマーカー表示プログラム
@@ -208,7 +215,7 @@ except ImportError:
 
 IS_WINDOWS = platform.system() == "Windows"
 
-SCRIPT_VERSION = "5.0.1-eye-origin-pupil"
+SCRIPT_VERSION = "5.1.0-eye-origin-pupil"
 
 # ============================================================================
 # 定数・既定値
@@ -247,6 +254,11 @@ FIELDNAMES = [
     "right_pupil_diameter_mm",
     "left_pupil_validity",
     "right_pupil_validity",
+    # v5.1.0 で追加（眼位置 UCS の x, y [mm]）
+    "left_gaze_origin_x_mm",
+    "left_gaze_origin_y_mm",
+    "right_gaze_origin_x_mm",
+    "right_gaze_origin_y_mm",
 ]
 
 
@@ -254,47 +266,43 @@ FIELDNAMES = [
 # ロギング
 # ============================================================================
 
-class SecretRedactingFilter(logging.Filter):
-    """ログに秘密情報を残さないためのフィルタ（v5.0.1）。
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+
+
+class RedactingFormatter(logging.Formatter):
+    """ログに秘密情報を残さないためのフォーマッタ（v5.0.1、5.1.0 でフィルタから置き換え）。
 
     - OBS WebSocket のパスワード（obsws-python が接続時に INFO で "password='...'" を出す）は常に伏せる
     - 制御用 token は redact_token=True のとき伏せる。ログファイルには残さないが、
       実験者が開始時の URL を読むコンソールには表示する
-    ハンドラに付けるので、ライブラリのロガーから伝播してきたレコードにも効く。
+    LogRecord は複数のハンドラで共有されるので書き換えず、ハンドラごとに整形済みの文字列だけを伏せる
+    （フィルタで record.msg を書き換えると、先に処理したハンドラの伏せ字が他のハンドラにも漏れる）。
     """
 
     _PASSWORD = re.compile(r"(password\s*[=:]\s*)(?:'[^']*'|\"[^\"]*\"|[^\s,)]+)", re.IGNORECASE)
     _TOKEN = re.compile(r"(token=)[^&\s\"']+")
 
-    def __init__(self, redact_token: bool = False):
-        super().__init__()
+    def __init__(self, fmt: str = LOG_FORMAT, redact_token: bool = False):
+        super().__init__(fmt)
         self.redact_token = redact_token
 
-    def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            msg = record.getMessage()
-        except Exception:  # noqa: BLE001 書式の壊れたレコードはそのまま通す
-            return True
-        red = self._PASSWORD.sub(r"\1***", msg)
+    def redact(self, text: str) -> str:
+        text = self._PASSWORD.sub(r"\1***", text)
         if self.redact_token:
-            red = self._TOKEN.sub(r"\1***", red)
-        if red != msg:
-            record.msg = red
-            record.args = None
-        return True
+            text = self._TOKEN.sub(r"\1***", text)
+        return text
+
+    def format(self, record: logging.LogRecord) -> str:
+        return self.redact(super().format(record))
 
 
 def setup_logging(log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
-    file_handler.addFilter(SecretRedactingFilter(redact_token=True))
+    file_handler.setFormatter(RedactingFormatter(redact_token=True))
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.addFilter(SecretRedactingFilter(redact_token=False))
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[file_handler, console_handler],
-    )
+    console_handler.setFormatter(RedactingFormatter(redact_token=False))
+    logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
 
 
 # ============================================================================
@@ -538,14 +546,19 @@ class GazeRecorder:
             return None, None
 
     @staticmethod
-    def _safe_z(value):
-        """(x, y, z) のタプルから z を取り出す。取れなければ None。"""
+    def _safe_component(value, index: int):
+        """(x, y, z) のタプルから index 番目を取り出す。取れなければ None。"""
         if value is None:
             return None
         try:
-            return value[2]
+            return value[index]
         except Exception:
             return None
+
+    @staticmethod
+    def _safe_z(value):
+        """(x, y, z) のタプルから z を取り出す。取れなければ None。"""
+        return GazeRecorder._safe_component(value, 2)
 
     @staticmethod
     def _average_xy(left_x, left_y, left_valid, right_x, right_y, right_valid):
@@ -618,6 +631,14 @@ class GazeRecorder:
             "right_pupil_diameter_mm": self._fmt(gaze_data.get("right_pupil_diameter")),
             "left_pupil_validity": gaze_data.get("left_pupil_validity"),
             "right_pupil_validity": gaze_data.get("right_pupil_validity"),
+            "left_gaze_origin_x_mm": self._fmt(self._safe_component(
+                gaze_data.get("left_gaze_origin_in_user_coordinate_system"), 0)),
+            "left_gaze_origin_y_mm": self._fmt(self._safe_component(
+                gaze_data.get("left_gaze_origin_in_user_coordinate_system"), 1)),
+            "right_gaze_origin_x_mm": self._fmt(self._safe_component(
+                gaze_data.get("right_gaze_origin_in_user_coordinate_system"), 0)),
+            "right_gaze_origin_y_mm": self._fmt(self._safe_component(
+                gaze_data.get("right_gaze_origin_in_user_coordinate_system"), 1)),
         }
 
         if not self.first_sample_event.is_set():

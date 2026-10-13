@@ -45,7 +45,7 @@
 
 ```
 [較正] src/gaze_estimation/calibrate_validate.py  試合前に9点キャリブレーション＋検証 → data/raw/calib_<subject>_<日時>.json
-[計測] src/gaze_estimation/tobii_capture_with_sync_flash_v5.py   (SCRIPT_VERSION 5.0.1-eye-origin-pupil。v4.1 に眼位置z・瞳孔の列を末尾追加。5.0.1 でログからパスワード・token を除去)
+[計測] src/gaze_estimation/tobii_capture_with_sync_flash_v5.py   (SCRIPT_VERSION 5.1.0-eye-origin-pupil。v4.1 に眼位置z・瞳孔の列を末尾追加。5.0.1 でログからパスワード・token を除去。5.1.0 で眼位置 x/y を末尾追加)
          + src/obs_controller_v2.py  (obsws-python / OBS WebSocket v5 で録画を自動開始・停止)
          → data/raw/gaze_<subject>_<trial>_<condition>_<YYYYMMDD_HHMMSS>.csv / _meta.json / ログ
          開始・停止は同一LAN上の別端末ブラウザから HTTP（既定 port 8765、token 付き）
@@ -64,6 +64,7 @@
 ### 視線CSVの列（`FIELDNAMES`）
 `wall_timestamp_local, wall_timestamp_utc, pc_time_sec, device_time_stamp_us, system_time_stamp_us, left_x, left_y, right_x, right_y, center_x, center_y, left_gaze_point_validity, right_gaze_point_validity, gaze_missing`
 （v5 で末尾に追加）`left_gaze_origin_z_mm, right_gaze_origin_z_mm, left_gaze_origin_validity, right_gaze_origin_validity, left_pupil_diameter_mm, right_pupil_diameter_mm, left_pupil_validity, right_pupil_validity`
+（v5.1.0 で末尾に追加）`left_gaze_origin_x_mm, left_gaze_origin_y_mm, right_gaze_origin_x_mm, right_gaze_origin_y_mm`（眼位置 UCS の x, y [mm]）
 
 - 座標は Tobii display area の正規化座標（左上 (0,0)、右下 (1,1)）。画面外では 0 未満・1 超もあり得る
 - 欠測は文字列 `"NaN"`。`gaze_missing` は `True/False` 文字列

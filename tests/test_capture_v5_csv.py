@@ -18,6 +18,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
+V50_ADDED = [
+    "left_gaze_origin_z_mm", "right_gaze_origin_z_mm", "left_gaze_origin_validity", "right_gaze_origin_validity",
+    "left_pupil_diameter_mm", "right_pupil_diameter_mm", "left_pupil_validity", "right_pupil_validity",
+]
+V51_ADDED = ["left_gaze_origin_x_mm", "left_gaze_origin_y_mm", "right_gaze_origin_x_mm", "right_gaze_origin_y_mm"]
+
 V4_FIELDNAMES = [
     "wall_timestamp_local", "wall_timestamp_utc", "pc_time_sec", "device_time_stamp_us",
     "system_time_stamp_us", "left_x", "left_y", "right_x", "right_y", "center_x", "center_y",
@@ -64,7 +70,9 @@ def sample(t_us, valid=True):
 
 def test_v5_csv_is_backward_compatible(tcap, tmp_path):
     assert tcap.FIELDNAMES[:len(V4_FIELDNAMES)] == V4_FIELDNAMES
-    assert len(tcap.FIELDNAMES) == len(V4_FIELDNAMES) + 8
+    # v5.0 の8列の順序も変えず、v5.1.0 の4列（眼位置 x/y）は末尾に追加
+    assert tcap.FIELDNAMES[len(V4_FIELDNAMES):len(V4_FIELDNAMES) + 8] == V50_ADDED
+    assert tcap.FIELDNAMES[len(V4_FIELDNAMES) + 8:] == V51_ADDED
 
     csv_path = tmp_path / "gaze_T_1_default_20261020_000000.csv"
     rec = tcap.GazeRecorder(csv_path, eyetracker=None, target_fps=60)
@@ -79,6 +87,9 @@ def test_v5_csv_is_backward_compatible(tcap, tmp_path):
     assert list(df.columns) == tcap.FIELDNAMES
     assert df.loc[0, "left_gaze_origin_z_mm"] == pytest.approx(648.5)
     assert df.loc[0, "left_pupil_diameter_mm"] == pytest.approx(3.4)
+    assert df.loc[0, "left_gaze_origin_x_mm"] == pytest.approx(30.0)
+    assert df.loc[0, "right_gaze_origin_y_mm"] == pytest.approx(10.0)
+    assert pd.isna(df.loc[9, "left_gaze_origin_x_mm"])
     assert df.loc[9, "gaze_missing"] == True  # noqa: E712
     raw = csv_path.read_text(encoding="utf-8-sig").splitlines()[10]
     assert raw.count("NaN") >= 4  # 欠測は空欄ではなく "NaN"
@@ -105,8 +116,9 @@ def test_v5_csv_is_backward_compatible(tcap, tmp_path):
 def _redact(tcap, msg, *args, redact_token=False):
     import logging
     rec = logging.LogRecord("obsws_python.baseclient.ObsClient", logging.INFO, __file__, 1, msg, args, None)
-    tcap.SecretRedactingFilter(redact_token=redact_token).filter(rec)
-    return rec.getMessage()
+    out = tcap.RedactingFormatter(redact_token=redact_token).format(rec)
+    assert rec.getMessage() == (msg % args if args else msg)  # レコード自体は書き換えない
+    return out
 
 
 def test_log_redacts_obs_password(tcap):
@@ -126,7 +138,7 @@ def test_log_redacts_token_only_when_requested(tcap):
     assert "vYH_TNXQ3cs" not in red and "token=*** HTTP/1.1" in red
 
 
-def test_log_file_does_not_contain_secrets(tcap, tmp_path):
+def test_log_file_does_not_contain_secrets(tcap, tmp_path, capsys):
     import logging
     root = logging.getLogger()
     saved = root.handlers[:], root.level
@@ -141,6 +153,11 @@ def test_log_file_does_not_contain_secrets(tcap, tmp_path):
         text = log_path.read_text(encoding="utf-8")
         assert "pw-in-log" not in text and "tok-in-log" not in text
         assert "password=***" in text and "token=***" in text
+        # コンソール：パスワードは伏せるが、実験者が開く URL の token はそのまま出す
+        # （2026-10-13 レビュー指摘13：ファイル用の伏せ字がコンソールにも漏れていた）
+        console = capsys.readouterr().out
+        assert "pw-in-log" not in console
+        assert "token=tok-in-log" in console
     finally:
         for h in root.handlers:
             h.close()

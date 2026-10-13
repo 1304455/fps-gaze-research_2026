@@ -122,3 +122,14 @@ def test_position_guide_screen_runs_and_records(monkeypatch):
     assert res["ok"]
     assert res["recorded"]["z_mid_mm"] == pytest.approx(655.0)
     assert res["recorded"]["x_mid_mm"] == pytest.approx(2.0)
+
+
+def test_resolve_target_distance_order():
+    # 2026-10-13 レビュー指摘4：--reference の z が使われず、常に 650 が目標になっていた
+    from head_position_guide import resolve_target_distance
+    ref = {"x_mid_mm": -1.0, "y_mid_mm": -35.0, "z_mid_mm": 620.0}
+    assert resolve_target_distance(None, ref) == (620.0, "--reference の記録")
+    assert resolve_target_distance(650.0, ref)[0] == 650.0  # 明示指定が最優先
+    assert resolve_target_distance(None, None) == (650.0, "既定値（650 mm）")
+    assert resolve_target_distance(None, {"x_mid_mm": 0.0, "y_mid_mm": 0.0, "z_mid_mm": None})[0] == 650.0
+

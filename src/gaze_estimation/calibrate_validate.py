@@ -57,7 +57,7 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-SCRIPT_VERSION = "1.2.0"
+SCRIPT_VERSION = "1.2.1"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
@@ -423,7 +423,8 @@ def main(argv=None):
     p.add_argument("--no-retry", action="store_true", help="検証点の測り直しをしない")
     p.add_argument("--position-only", action="store_true", help="頭部位置ガイドだけを表示して記録する")
     p.add_argument("--skip-position-guide", action="store_true", help="キャリブレーション前の頭部位置ガイドを省略する")
-    p.add_argument("--target-distance-mm", type=float, default=650.0, help="頭部位置ガイド：目標の眼−トラッカー距離（mm）")
+    p.add_argument("--target-distance-mm", type=float, default=None,
+                   help="頭部位置ガイド：目標の眼−トラッカー距離（mm）。未指定なら --reference の z、それも無ければ 650")
     p.add_argument("--tolerance-z-mm", type=float, default=30.0, help="頭部位置ガイド：距離の許容幅（±mm）")
     p.add_argument("--tolerance-x-mm", type=float, default=30.0, help="頭部位置ガイド：左右の許容幅（±mm）")
     p.add_argument("--reference", type=Path, default=None,
@@ -459,7 +460,7 @@ def main(argv=None):
     idx = int(input(f"測定対象ディスプレイの番号 (1-{len(monitors)}): ").strip())
     monitor = monitors[idx - 1]
 
-    from head_position_guide import reference_from_calib, run_position_guide
+    from head_position_guide import reference_from_calib, resolve_target_distance, run_position_guide
 
     reference = None
     if args.reference:
@@ -467,6 +468,7 @@ def main(argv=None):
             reference = reference_from_calib(json.load(f))
         if reference is None:
             print(f"⚠ 警告: {args.reference} に頭部位置の記録がありません。距離と左右だけで合わせます。")
+    target_z, target_z_source = resolve_target_distance(args.target_distance_mm, reference)
     calib_points = calibration_points(args.calib_margin)
     retry_thr = None if args.no_retry else (args.retry_threshold_deg or args.max_hud_accuracy_deg)
 
@@ -477,8 +479,9 @@ def main(argv=None):
     try:
         if not args.skip_position_guide or args.position_only:
             head_position = run_position_guide(
-                tr, eyetracker, screen, target_z_mm=args.target_distance_mm, tol_z_mm=args.tolerance_z_mm,
-                tol_x_mm=args.tolerance_x_mm, reference=reference, flip_x=args.flip_x)
+                tr, eyetracker, screen, target_z_mm=target_z, tol_z_mm=args.tolerance_z_mm,
+                tol_x_mm=args.tolerance_x_mm, reference=reference, flip_x=args.flip_x,
+                target_z_source=target_z_source)
             rec = head_position["recorded"]
             print(f"頭部位置: 距離 {rec['z_mid_mm']} mm / 左右 {rec['x_mid_mm']} mm / 上下 {rec['y_mid_mm']} mm "
                   f"（{'範囲内' if head_position['ok'] else '範囲外のまま確定'}）")
