@@ -57,9 +57,13 @@ _TIME_EPS = 1e-6
 # 解析パラメータの既定値。研究上の定義に関わる値は「要合意」として
 # docs/IMPROVEMENT_PLAN.md の T4 決定事項に対応させている。
 DEFAULT_PARAMS = {
-    # 眼−画面距離 [mm]。主解析は固定値（推奨）。"manifest" にすると台帳の実測値を使う
+    # 眼−画面距離 [mm]（視角への換算＝I-DT の分散閾値に使う）。2026-10-13 合意：650 mm は「基準」であり固定ではない。
+    #   "measured"：セッションごとに、分析区間内の有効な gaze_origin z（眼−トラッカー距離）の中央値を使う（主解析）
+    #   "fixed"   ：eye_screen_distance_mm をそのまま使う（感度分析。analysis_params_sensitivity_fixed650.json）
+    #   "manifest"：台帳の eye_screen_distance_cm を使う
+    # measured のとき eye_screen_distance_mm は計算に使わず、基準値として qc.json に残すだけ
     "eye_screen_distance_mm": 650.0,
-    "eye_screen_distance_source": "fixed",
+    "eye_screen_distance_source": "measured",
     # I-DT（Salvucci & Goldberg, 2000）
     "idt_min_duration_ms": 100.0,
     "idt_max_dispersion_deg": 1.0,
@@ -90,8 +94,8 @@ def merge_params(user_params: "dict | None") -> dict:
         params.update({k: v for k, v in user_params.items() if k != "_comment"})
     if params["duration_time_column"] not in ("pc_time_sec", "system_time_stamp_us"):
         raise ValueError("duration_time_column は pc_time_sec か system_time_stamp_us です。")
-    if params["eye_screen_distance_source"] not in ("fixed", "manifest"):
-        raise ValueError("eye_screen_distance_source は fixed か manifest です。")
+    if params["eye_screen_distance_source"] not in ("measured", "fixed", "manifest"):
+        raise ValueError("eye_screen_distance_source は measured / fixed / manifest のいずれかです。")
     return params
 
 
@@ -373,6 +377,20 @@ def analyze_session(df: pd.DataFrame, aois: list[dict], display: DisplayGeometry
     segment_id = assign_segments(t_sync, segments)
     in_seg = ~np.isnan(segment_id)
 
+    # 眼−画面距離：measured なら分析区間内の実測値（gaze_origin z の中央値）で置き換える
+    if params["eye_screen_distance_source"] == "measured":
+        eye_distance = eye_distance_summary(df, in_seg)
+        if not eye_distance["available"]:
+            raise ValueError("eye_screen_distance_source=measured ですが、分析区間内に有効な gaze_origin z がありません"
+                             "（v4 以前の CSV など）。--params で fixed を指定してください。")
+        distance_mm = eye_distance["median_mm"]
+        eye_distance_used = {"mm": distance_mm, "source": "measured",
+                             "detail": "分析区間内の有効な gaze_origin z（左右眼をまとめた全サンプル）の中央値",
+                             "reference_mm": float(params["eye_screen_distance_mm"]),
+                             **{k: eye_distance[k] for k in ("p05_mm", "p95_mm", "n")}}
+    else:
+        eye_distance_used = {"mm": distance_mm, "source": params["eye_screen_distance_source"]}
+
     # サンプル位置のAOI（Gaze % 用）
     sample_aoi = assign_aoi(x, y, aois)
     sample_aoi[offscreen] = OFFSCREEN_LABEL
@@ -475,6 +493,7 @@ def analyze_session(df: pd.DataFrame, aois: list[dict], display: DisplayGeometry
         "transitions_long": transitions_long,
         "transitions_matrix": transitions_matrix,
         "sample_dt": sample_dt,
+        "eye_distance_used": eye_distance_used,
         "categories": cats,
         "gap_summary": {
             **gap_summary(t, valid, segment_id, sample_dt),
@@ -662,11 +681,14 @@ def time_base_comparison(df: pd.DataFrame) -> dict:
     }
 
 
-def eye_distance_summary(df: pd.DataFrame) -> dict:
-    """T1 で追加した gaze_origin の z [mm]（眼−トラッカー距離）の要約。列が無ければ available=False。"""
+def eye_distance_summary(df: pd.DataFrame, mask: "np.ndarray | None" = None) -> dict:
+    """T1 で追加した gaze_origin の z [mm]（眼−トラッカー距離）の要約。列が無ければ available=False。
+    mask を渡すとその行（例：分析区間内）だけで集計する。"""
     cols = ["left_gaze_origin_z_mm", "right_gaze_origin_z_mm"]
     if not all(c in df.columns for c in cols):
         return {"available": False}
+    if mask is not None:
+        df = df.loc[np.asarray(mask, dtype=bool)]
     vals = []
     for side in ("left", "right"):
         z = pd.to_numeric(df[f"{side}_gaze_origin_z_mm"], errors="coerce")

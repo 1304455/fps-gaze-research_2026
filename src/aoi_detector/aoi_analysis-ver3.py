@@ -246,6 +246,12 @@ def main(argv=None):
 
     # --- 解析 ---
     res = gm.analyze_session(df, aois, display, params, segments)
+    if params["eye_screen_distance_source"] == "measured":
+        used = res["eye_distance_used"]
+        distance_note = (f"実測（{used['detail']}。眼−トラッカー距離で近似）。"
+                         f"基準値 {used['reference_mm']:.0f} mm からの差 {used['mm'] - used['reference_mm']:+.0f} mm")
+        print(f"眼−画面距離（実測・分析区間内の中央値）: {used['mm']:.0f} mm "
+              f"（5〜95%: {used['p05_mm']:.0f}〜{used['p95_mm']:.0f} mm）")
 
     # --- 出力 ---
     out_dir = Path(args.output_dir) / session_base
@@ -283,7 +289,7 @@ def main(argv=None):
         },
         "sync": sync,
         "params": params,
-        "eye_screen_distance_used": {"mm": params["eye_screen_distance_mm"], "source": distance_note},
+        "eye_screen_distance_used": {**res["eye_distance_used"], "note": distance_note},
         "display": display.as_dict(),
         "aoi": {
             "screen_name": raw_aoi.get("screen_name"),

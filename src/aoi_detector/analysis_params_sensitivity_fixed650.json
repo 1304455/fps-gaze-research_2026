@@ -1,0 +1,14 @@
+{
+  "_comment": "感度分析用：眼−画面距離を基準値 650 mm に固定する（主解析は measured。2026-10-13 合意）。それ以外は既定値と同じ。",
+  "eye_screen_distance_mm": 650.0,
+  "eye_screen_distance_source": "fixed",
+  "idt_min_duration_ms": 100.0,
+  "idt_max_dispersion_deg": 1.0,
+  "max_gap_ms": 75.0,
+  "offscreen_in_denominator": true,
+  "duration_time_column": "pc_time_sec",
+  "segment_types": [
+    "alive"
+  ],
+  "visit_merge_max_gap_ms": 200.0
+}

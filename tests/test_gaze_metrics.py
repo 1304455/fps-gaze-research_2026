@@ -417,7 +417,7 @@ class TestParamsAndQc:
         assert res["fixations"]["duration_sec"].iloc[0] == pytest.approx(30 * DT, abs=1e-5)
 
     def test_eye_distance_summary(self):
-        df = make_df(hold(CROSSHAIR, 10))
+        df = make_df(hold(CROSSHAIR, 10), eye_z_mm=None)
         assert not gm.eye_distance_summary(df)["available"]
         df["left_gaze_origin_z_mm"] = 640.0
         df["right_gaze_origin_z_mm"] = 660.0
@@ -475,3 +475,50 @@ class TestAoiCheck:
         assert g["tracker_tilt_deg"] == pytest.approx(20.0, abs=0.1)
         assert g["size_mismatch"]  # 596.7 mm とは 1.7% 違う
         assert display_geometry_check({}, DISPLAY) is None
+
+
+class TestMeasuredEyeDistance:
+    """眼−画面距離の実測（2026-10-13 合意：650 mm は基準で、主解析はセッションごとの実測値）。"""
+
+    def test_default_uses_measured_median_within_segments(self, aois):
+        # 前半（区間外）は 700 mm、後半（区間内）は 575 mm。中央値は区間内だけで取る
+        pts = hold(CROSSHAIR, 60) + hold(CROSSHAIR, 60)
+        z = [700.0] * 60 + [575.0] * 60
+        df = make_df(pts, eye_z_mm=z)
+        seg = gm.whole_session_segment(np.array([60 * DT, 119 * DT]), DT)
+        res = gm.analyze_session(df, aois, DISPLAY, gm.merge_params(None), seg)
+        used = res["eye_distance_used"]
+        assert used["source"] == "measured"
+        assert used["mm"] == pytest.approx(575.0)
+        assert used["reference_mm"] == pytest.approx(650.0)
+
+    def test_distance_changes_idt_threshold_in_degrees(self, aois):
+        # 正規化座標で同じ揺れでも、近い（575 mm）ほど視角が大きく、分散閾値を超えやすい
+        step = 0.0046  # 横幅 596.7 mm の 0.46% ≈ 2.7 mm。650 mm で約 0.24°、575 mm で約 0.27°
+        pts = [(0.5 + step * (i % 2) * 3.6, 0.5) for i in range(60)]
+        far = gm.analyze_session(make_df(pts, eye_z_mm=650.0), aois, DISPLAY, gm.merge_params(None), None)
+        near = gm.analyze_session(make_df(pts, eye_z_mm=500.0), aois, DISPLAY, gm.merge_params(None), None)
+        assert far["eye_distance_used"]["mm"] == pytest.approx(650.0)
+        assert near["eye_distance_used"]["mm"] == pytest.approx(500.0)
+        assert len(far["fixations"]) == 1
+        assert len(near["fixations"]) == 0
+
+    def test_fixed_source_ignores_measured(self, aois):
+        df = make_df(hold(CROSSHAIR, 30), eye_z_mm=575.0)
+        res = gm.analyze_session(df, aois, DISPLAY, gm.merge_params({"eye_screen_distance_source": "fixed"}), None)
+        assert res["eye_distance_used"] == {"mm": 650.0, "source": "fixed"}
+
+    def test_measured_requires_eye_columns(self, aois):
+        df = make_df(hold(CROSSHAIR, 30), eye_z_mm=None)
+        with pytest.raises(ValueError, match="fixed"):
+            gm.analyze_session(df, aois, DISPLAY, gm.merge_params(None), None)
+
+    def test_sensitivity_params_file(self):
+        import json
+        root = Path(__file__).resolve().parent.parent / "src" / "aoi_detector"
+        default = json.loads((root / "analysis_params_default.json").read_text(encoding="utf-8"))
+        fixed = json.loads((root / "analysis_params_sensitivity_fixed650.json").read_text(encoding="utf-8"))
+        assert gm.merge_params(default) == gm.DEFAULT_PARAMS
+        assert gm.merge_params(fixed)["eye_screen_distance_source"] == "fixed"
+        diff = {k for k in gm.DEFAULT_PARAMS if gm.merge_params(fixed)[k] != gm.DEFAULT_PARAMS[k]}
+        assert diff == {"eye_screen_distance_source"}
