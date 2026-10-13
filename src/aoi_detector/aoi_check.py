@@ -31,20 +31,14 @@ if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
 from aoi_geometry import (  # noqa: E402
-    aoi_extent_deg, aoi_mask, display_tilt_in_ucs_deg, find_overlapping_aois, get_display, load_aoi_config,
-    norm_to_deg,
+    aoi_center, aoi_extent_deg, aoi_mask, display_tilt_in_ucs_deg, eye_mean, find_overlapping_aois, get_display,
+    load_aoi_config, norm_to_deg,
 )
 
 _PROJECT_ROOT = _THIS_DIR.parent.parent
 DEFAULT_OUT_DIR = _PROJECT_ROOT / "data" / "processed" / "aoi_check"
 COLORS_BGR = [(0, 0, 255), (0, 160, 0), (255, 0, 0), (0, 165, 255), (160, 0, 160),
               (255, 255, 0), (0, 255, 255), (255, 0, 255), (128, 128, 255)]
-
-
-def aoi_center(a: dict) -> tuple[float, float]:
-    if a["type"] == "circle":
-        return a["center_x"], a["center_y"]
-    return (a["x_min"] + a["x_max"]) / 2, (a["y_min"] + a["y_max"]) / 2
 
 
 def _point_for_aoi(a: dict, points: list[dict], max_sep: float = 0.03) -> "tuple[dict | None, str]":
@@ -64,12 +58,11 @@ def _point_for_aoi(a: dict, points: list[dict], max_sep: float = 0.03) -> "tuple
 
 
 def _mean_bias(p: dict) -> "tuple[float | None, float | None]":
-    """左右眼の bias（正規化座標）の平均。片眼だけなら片眼の値。"""
-    bx = [p[e]["bias_x_norm"] for e in ("left", "right") if isinstance(p.get(e), dict) and p[e].get("bias_x_norm") is not None]
-    by = [p[e]["bias_y_norm"] for e in ("left", "right") if isinstance(p.get(e), dict) and p[e].get("bias_y_norm") is not None]
-    if not bx or not by:
+    """左右眼の bias（正規化座標）の平均（aoi_geometry.eye_mean）。片眼だけなら片眼の値。どちらかが無ければ None。"""
+    bx, by = eye_mean(p, "bias_x_norm"), eye_mean(p, "bias_y_norm")
+    if np.isnan(bx) or np.isnan(by):
         return None, None
-    return float(np.mean(bx)), float(np.mean(by))
+    return bx, by
 
 
 def size_table(aois: list[dict], display, distance_mm: float, calib: "dict | None",

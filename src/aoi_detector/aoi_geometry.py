@@ -188,6 +188,26 @@ def get_display(raw_config: dict) -> "DisplayGeometry | None":
     return DisplayGeometry.from_dict(d) if d else None
 
 
+def aoi_center(aoi: dict) -> tuple[float, float]:
+    """AOI の中心（正規化座標）。円は中心、矩形は min/max の中点。検証点の位置と aoi_check の比較で共通に使う。"""
+    if aoi["type"] == "circle":
+        return aoi["center_x"], aoi["center_y"]
+    return (aoi["x_min"] + aoi["x_max"]) / 2, (aoi["y_min"] + aoi["y_max"]) / 2
+
+
+def eye_mean(point: dict, key: str) -> float:
+    """
+    calib JSON の検証点（validation_points の1要素）で、左右眼の値（例 bias_y_norm）の平均。
+    片眼だけ有効ならその眼の値、どちらも無ければ NaN（calibrate_validate の definitions.binocular と同じ定義）。
+    """
+    vals = []
+    for eye in ("left", "right"):
+        v = (point.get(eye) or {}).get(key)
+        if v is not None and not (isinstance(v, float) and math.isnan(v)):
+            vals.append(float(v))
+    return float(np.mean(vals)) if vals else float("nan")
+
+
 def aoi_config_content_sha256(raw_config: dict) -> str:
     """
     AOI設定の中身のハッシュ。読み込んだ JSON をキー順・区切りを揃えて書き出してから求めるので、

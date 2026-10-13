@@ -9,6 +9,9 @@ data/annotations/<session_base>_segments.csv を書き出す。aoi_analysis-ver3
   視線時刻への変換は解析時に sync の offset_sec で行う
 - 区間 = 「購入フェーズ終了」→「死亡」または「ラウンド終了」（生存中、segment_type=alive）
 - 押したイベントは都度 <session_base>_segments_events.json に保存し、途中で閉じても再開できる
+- 区間 CSV は events JSON から作り直して保存する。既存の CSV を手で編集していた（events から作った内容と違う）場合は、
+  最初の保存の前に <session_base>_segments.backup_<日時>.csv へ退避してから上書きする。
+  events JSON が無いのに区間 CSV に行がある場合（手作業で作った CSV）は、上書きしないよう起動しない
 
 キー操作
 --------
@@ -35,12 +38,20 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import shutil
+import sys
+from datetime import datetime
 from pathlib import Path
+
+_AOI_DIR = Path(__file__).resolve().parent.parent / "aoi_detector"
+if str(_AOI_DIR) not in sys.path:
+    sys.path.insert(0, str(_AOI_DIR))
+
+# 区間 CSV の列は読む側（aoi_analysis-ver3 / gaze_metrics）の定義をそのまま使う（二重定義でずれないように）
+from gaze_metrics import SEGMENT_COLUMNS as SEGMENT_CSV_COLUMNS  # noqa: E402
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_ANNOTATION_DIR = _PROJECT_ROOT / "data" / "annotations"
-
-SEGMENT_CSV_COLUMNS = ["round", "segment_type", "video_start_sec", "video_end_sec", "end_reason", "side", "notes"]
 EVENT_KINDS = {"buy_end": "購入フェーズ終了", "death": "死亡", "round_end": "ラウンド終了"}
 SIDES = ("attack", "defense")
 
@@ -100,6 +111,72 @@ def write_segments_csv(path: Path, rows: list[dict]) -> None:
         w.writerows(rows)
 
 
+def _as_text_rows(rows: list[dict]) -> list[dict]:
+    """CSV に書いたときの文字列に揃える（csv モジュールは str() で書き、読むと文字列・空は ''）。"""
+    return [{k: "" if v is None else str(v) for k, v in r.items()} for r in rows]
+
+
+def existing_csv_differs(segments_csv: Path, events: list[dict]) -> bool:
+    """
+    既存の区間 CSV が、events から作り直した内容と違うか（手で編集した・別に作った・Excel で保存し直した）。
+    CSV が無ければ False。読めない（cp932 など）場合も違うものとして扱う（上書き前に退避させるため）。
+    """
+    if not segments_csv.exists():
+        return False
+    rows, _ = events_to_segments(events)
+    try:
+        with open(segments_csv, "r", newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            existing = list(reader)
+            header = reader.fieldnames
+    except UnicodeDecodeError:
+        return True
+    if header is None:  # 空のファイル
+        return False
+    return list(header) != list(SEGMENT_CSV_COLUMNS) or _as_text_rows(existing) != _as_text_rows(rows)
+
+
+def check_existing_segments_csv(segments_csv: Path, events: list[dict]) -> bool:
+    """
+    起動時の確認。上書きの前に退避が必要なら True を返す。
+    events が無いのに CSV に中身がある（手作業で作った CSV）なら、作り直すと区間が0件になるので起動しない。
+    """
+    if not existing_csv_differs(segments_csv, events):
+        return False
+    if not events:
+        raise SystemExit(
+            f"エラー: {segments_csv} がありますが、イベントの記録（*_segments_events.json）がありません。\n"
+            "  このまま保存すると、手で作った区間が消えて0件の CSV で上書きされるため中止しました。\n"
+            "  注釈し直す場合は、既存の CSV を別名に移してから起動してください。")
+    print(f"⚠ 警告: {segments_csv.name} は記録されたイベントから作った内容と違います（手で編集した可能性）。"
+          "最初に保存する前に backup を作ってから上書きします。")
+    return True
+
+
+def backup_path(segments_csv: Path, stamp: "str | None" = None) -> Path:
+    stamp = stamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+    return segments_csv.with_name(f"{segments_csv.stem}.backup_{stamp}{segments_csv.suffix}")
+
+
+def save_segments(segments_csv: Path, events_json: Path, events: list[dict], video_path: Path, fps: float,
+                  backup_pending: bool) -> "tuple[str, Path | None]":
+    """
+    events から区間 CSV を作り直して保存する。backup_pending なら、上書きの前に既存の CSV を退避する。
+    戻り値：(表示するメッセージ, 退避先。退避しなければ None)
+    """
+    backup = None
+    if backup_pending and segments_csv.exists():
+        backup = backup_path(segments_csv)
+        shutil.copy2(segments_csv, backup)
+        print(f"[annotator] 既存の CSV を退避しました: {backup.name}")
+    rows, warnings = events_to_segments(events)
+    write_segments_csv(segments_csv, rows)
+    save_events(events_json, events, video_path, fps)
+    for w_ in warnings:
+        print(f"⚠ {w_}")
+    return f"保存しました（{len(rows)}区間）: {segments_csv.name}", backup
+
+
 def load_events(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -119,6 +196,11 @@ def save_events(path: Path, events: list[dict], video_path: Path, fps: float) ->
 # ---------------------------------------------------------------------------
 
 def run_ui(video_path: Path, segments_csv: Path, events_json: Path, start_side: str, display_width: int) -> None:
+    events = load_events(events_json)
+    if events:
+        print(f"[annotator] 既存のイベント {len(events)} 件を読み込みました: {events_json}")
+    backup_pending = check_existing_segments_csv(segments_csv, events)
+
     import cv2  # UI を使うときだけ必要
 
     cap = cv2.VideoCapture(str(video_path))
@@ -126,10 +208,6 @@ def run_ui(video_path: Path, segments_csv: Path, events_json: Path, start_side: 
         raise SystemExit(f"エラー: 動画を開けません: {video_path}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 60.0
     n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    events = load_events(events_json)
-    if events:
-        print(f"[annotator] 既存のイベント {len(events)} 件を読み込みました: {events_json}")
     side = events[-1]["side"] if events else start_side
 
     frame_idx = 0
@@ -142,12 +220,11 @@ def run_ui(video_path: Path, segments_csv: Path, events_json: Path, start_side: 
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
 
     def save():
-        rows, warnings = events_to_segments(events)
-        write_segments_csv(segments_csv, rows)
-        save_events(events_json, events, video_path, fps)
-        for w_ in warnings:
-            print(f"⚠ {w_}")
-        return f"保存しました（{len(rows)}区間）: {segments_csv.name}"
+        nonlocal backup_pending
+        msg, backup = save_segments(segments_csv, events_json, events, video_path, fps, backup_pending)
+        if backup is not None:
+            backup_pending = False
+        return msg
 
     while True:
         if need_seek:

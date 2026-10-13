@@ -57,6 +57,8 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+from aoi_geometry import aoi_center  # noqa: E402
+
 SCRIPT_VERSION = "1.3.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
@@ -211,10 +213,7 @@ def validation_targets(aois: "list[dict] | None", min_separation: float = 0.03) 
     """9点グリッド＋各AOIの中心。既存の点と近すぎるAOI中心は重複として省く。"""
     targets = [{"label": f"grid_{x:.1f}_{y:.1f}", "kind": "grid", "x": x, "y": y} for x, y in GRID_VALIDATION_POINTS]
     for aoi in aois or []:
-        if aoi["type"] == "circle":
-            cx, cy = aoi["center_x"], aoi["center_y"]
-        else:
-            cx, cy = (aoi["x_min"] + aoi["x_max"]) / 2, (aoi["y_min"] + aoi["y_max"]) / 2
+        cx, cy = aoi_center(aoi)
         if any(abs(t["x"] - cx) < min_separation and abs(t["y"] - cy) < min_separation for t in targets):
             continue
         targets.append({"label": f"aoi_{aoi['name']}", "kind": "aoi", "aoi": aoi["name"], "x": cx, "y": cy})

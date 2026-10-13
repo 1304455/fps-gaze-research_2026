@@ -6,6 +6,8 @@
 どの条件で上下端のずれが小さくなるかを同じ物差しで比べるための診断ツール。研究データは書き換えない。
 
 1ファイル1行で出す主な列
+  calib_margin / calibration_status     較正点の位置と SDK の較正の結果。--validate-only（ETM で較正）の回は
+                                        calib_margin を空にする（既定値 0.1 が記録されていて margin の比較に混ざるため）
   display_width_mm / display_height_mm  トラッカーに設定されていた画面の寸法
   display_angle_deg                     トラッカー座標系（UCS）から見た画面の傾き（＝Spark と画面の相対角度の設定値）
   mean_accuracy_deg / hud_max_accuracy_deg / passed
@@ -41,7 +43,7 @@ _AOI_DIR = Path(__file__).resolve().parent.parent / "aoi_detector"
 if str(_AOI_DIR) not in sys.path:
     sys.path.insert(0, str(_AOI_DIR))
 
-from aoi_geometry import display_tilt_in_ucs_deg  # noqa: E402
+from aoi_geometry import display_tilt_in_ucs_deg, eye_mean  # noqa: E402
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_OUT = _PROJECT_ROOT / "data" / "processed" / "calib_compare" / "calib_compare.csv"
@@ -88,16 +90,6 @@ def display_geometry(calib: dict) -> dict:
             "display_angle_deg": display_tilt_in_ucs_deg(da)}
 
 
-def eye_mean(point: dict, key: str) -> float:
-    """左右眼の値の平均（片眼のみ有効ならその眼）。どちらも無ければ NaN。"""
-    vals = []
-    for eye in ("left", "right"):
-        v = (point.get(eye) or {}).get(key)
-        if v is not None and not (isinstance(v, float) and math.isnan(v)):
-            vals.append(float(v))
-    return float(np.mean(vals)) if vals else float("nan")
-
-
 def fit_scale(targets: np.ndarray, biases: np.ndarray) -> "tuple[float, float]":
     """bias = a + s·(target − 0.5) を最小二乗で当てはめ、(中央寄り% = −s·100, 切片 a) を返す。"""
     ok = ~np.isnan(biases)
@@ -108,7 +100,9 @@ def fit_scale(targets: np.ndarray, biases: np.ndarray) -> "tuple[float, float]":
     return float(-s * 100.0), float(a)
 
 
-def norm_to_deg(bias_norm: float, size_mm: "float | None", distance_mm: float) -> float:
+def bias_norm_to_deg(bias_norm: float, size_mm: "float | None", distance_mm: float) -> float:
+    """正規化座標のずれ（bias）を、画面の寸法 size_mm と眼−トラッカー距離で視角 [deg] にする。
+    aoi_geometry.norm_to_deg（画面中央からの座標の視角）とは別物。"""
     if size_mm is None or math.isnan(bias_norm):
         return float("nan")
     return math.degrees(math.atan(bias_norm * size_mm / distance_mm))
@@ -122,6 +116,10 @@ def summarize_calib(calib: dict, name: str = "") -> dict:
     pts = calib.get("validation_points", [])
     summ = calib.get("summary") or {}
     params = calib.get("parameters") or {}
+    calibration = calib.get("calibration") or {}
+    # --validate-only（ETM で較正）の回にも parameters.calib_margin（既定 0.1）が記録されているので、
+    # SDK で較正した回と同じ margin のグループに混ざらないよう空にする
+    validate_only = str(calibration.get("status") or "").startswith("not_performed")
 
     tx = np.array([p["target_x"] for p in pts], dtype=float)
     ty = np.array([p["target_y"] for p in pts], dtype=float)
@@ -142,7 +140,9 @@ def summarize_calib(calib: dict, name: str = "") -> dict:
         "created_at_utc": calib.get("created_at_utc"),
         "subject_id": calib.get("subject_id"),
         "script_version": (calib.get("script") or {}).get("version"),
-        "calib_margin": params.get("calib_margin", 0.1),
+        "calib_margin": None if validate_only else params.get("calib_margin", 0.1),
+        "calibration_status": calibration.get("status"),
+        "calibration_succeeded": calibration.get("succeeded"),
         **geo,
         "head_x_mm": head.get("x_mid_mm"),
         "head_y_mm": head.get("y_mid_mm"),
@@ -154,11 +154,11 @@ def summarize_calib(calib: dict, name: str = "") -> dict:
         "hud_worst_point": worst["label"] if worst else None,
         "n_retried": len(summ.get("retried_points", [])),
         "vertical_scale_pct": v_scale,
-        "vertical_offset_deg": norm_to_deg(v_off, h_mm, dist),
+        "vertical_offset_deg": bias_norm_to_deg(v_off, h_mm, dist),
         "horizontal_scale_pct": h_scale,
-        "horizontal_offset_deg": norm_to_deg(h_off, w_mm, dist),
-        "top_bar_bias_y_deg": norm_to_deg(float(np.nanmean(top)), h_mm, dist) if top else float("nan"),
-        "bottom_bar_bias_y_deg": norm_to_deg(float(np.nanmean(bottom)), h_mm, dist) if bottom else float("nan"),
+        "horizontal_offset_deg": bias_norm_to_deg(h_off, w_mm, dist),
+        "top_bar_bias_y_deg": bias_norm_to_deg(float(np.nanmean(top)), h_mm, dist) if top else float("nan"),
+        "bottom_bar_bias_y_deg": bias_norm_to_deg(float(np.nanmean(bottom)), h_mm, dist) if bottom else float("nan"),
     }
     for eye in ("left", "right"):
         accs = [(p.get(eye) or {}).get("accuracy_deg") for p in pts]
@@ -217,6 +217,11 @@ def main(argv=None):
     pd.set_option("display.max_columns", 50)
     print(df[PRINT_COLUMNS].round(2).to_string(index=False))
     print("\n縦/横の中央寄り% は 0 が理想（正 = 端ほど中央寄り）。top/bottom_bar は正 = 下向き、負 = 上向き。")
+    if df["calib_margin"].isna().any():
+        print("calib_margin が空の回は --validate-only（Eye Tracker Manager で較正）。margin の比較には入りません。")
+    failed = df["calibration_succeeded"].eq(False)
+    if failed.any():
+        print(f"⚠ SDK の較正が失敗した回があります（精度は前回の較正によるもの）: {df.loc[failed, 'file'].tolist()}")
     if df["display_width_mm"].round(1).nunique() > 1 or df["display_angle_deg"].round(1).nunique() > 1:
         print("⚠ 画面設定（寸法・角度）の違う回が混ざっています。条件の比較では揃えてください。")
     if args.group_by != "none":
