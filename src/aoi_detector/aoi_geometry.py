@@ -70,6 +70,21 @@ class DisplayGeometry:
         }
 
 
+def display_tilt_in_ucs_deg(display_area: dict) -> "float | None":
+    """
+    トラッカー座標系（UCS）から見た画面の傾き [deg]。calibrate_validate の display_area_ucs_mm を渡す。
+
+    定義：UCS の y 軸と、画面の縦辺（左下 → 左上）のなす角。上辺がユーザー側（UCS の +z）に来る向きを正。
+    Spark は画面の下で上向きに取り付けるので、これは「Spark と画面の相対角度」＝ Eye Tracker Manager に
+    設定された値であって、画面そのものの（鉛直からの）傾きではない。分度器でモニターや Spark の外装の
+    角度を測っても、この値とは直接比べられない（センサーの軸と外装の向きが一致するとは限らないため）。
+    """
+    tl, bl = (display_area or {}).get("top_left"), (display_area or {}).get("bottom_left")
+    if tl is None or bl is None:
+        return None
+    return math.degrees(math.atan2(tl[2] - bl[2], tl[1] - bl[1]))
+
+
 def norm_to_deg(x, y, display: DisplayGeometry, distance_mm: float):
     """
     正規化座標を、画面中央を 0° とする水平・垂直の視角 [deg] に変換する。

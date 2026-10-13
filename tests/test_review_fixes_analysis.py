@@ -158,3 +158,21 @@ class TestVer3Cli:
         assert dq["empty_segment_rounds"] == [2]
         assert dq["valid_rate_by_segment"] == {"0": 1.0, "1": None}
         assert dq["n_samples_by_segment"]["1"] == 0
+
+
+class TestDisplayTilt:
+    """指摘12：aoi_check と calib_compare の傾きの定義・表示を1つの関数にまとめた。"""
+
+    def test_same_definition_in_both_tools(self):
+        import math
+        from aoi_check import display_geometry_check
+        from aoi_geometry import display_tilt_in_ucs_deg
+        from calib_compare import display_geometry
+        a = math.radians(20.0)
+        da = {"top_left": [-300.0, 27.0 + 339.4 * math.cos(a), 3.0 + 339.4 * math.sin(a)],
+              "top_right": [303.0, 27.0 + 339.4 * math.cos(a), 3.0 + 339.4 * math.sin(a)],
+              "bottom_left": [-300.0, 27.0, 3.0], "width_mm": 603.0, "height_mm": 339.4}
+        assert display_tilt_in_ucs_deg(da) == pytest.approx(20.0)
+        assert display_geometry({"display_area_ucs_mm": da})["display_angle_deg"] == pytest.approx(20.0)
+        assert display_geometry_check({"display_area_ucs_mm": da}, DISPLAY)["tracker_tilt_deg"] == pytest.approx(20.0)
+        assert display_tilt_in_ucs_deg({}) is None

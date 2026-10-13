@@ -32,8 +32,16 @@ import json
 import math
 from pathlib import Path
 
+import sys
+
 import numpy as np
 import pandas as pd
+
+_AOI_DIR = Path(__file__).resolve().parent.parent / "aoi_detector"
+if str(_AOI_DIR) not in sys.path:
+    sys.path.insert(0, str(_AOI_DIR))
+
+from aoi_geometry import display_tilt_in_ucs_deg  # noqa: E402
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_OUT = _PROJECT_ROOT / "data" / "processed" / "calib_compare" / "calib_compare.csv"
@@ -74,16 +82,10 @@ def expand_inputs(items: list[str]) -> list[Path]:
 
 
 def display_geometry(calib: dict) -> dict:
-    """UCS 上の画面の寸法と傾き。傾きは UCS の y 軸と画面の縦辺の角度（上辺がユーザー側に来る向きを正）。
-    Spark は画面の下で上向きに取り付けるので、この角度が Eye Tracker Manager に設定された相対角度になる。"""
+    """UCS 上の画面の寸法と、Spark と画面の相対角度（ETM の設定値。aoi_geometry.display_tilt_in_ucs_deg）。"""
     da = calib.get("display_area_ucs_mm") or {}
-    tl, bl = da.get("top_left"), da.get("bottom_left")
-    angle = None
-    if tl and bl:
-        dy, dz = tl[1] - bl[1], tl[2] - bl[2]
-        angle = math.degrees(math.atan2(dz, dy))
     return {"display_width_mm": da.get("width_mm"), "display_height_mm": da.get("height_mm"),
-            "display_angle_deg": angle}
+            "display_angle_deg": display_tilt_in_ucs_deg(da)}
 
 
 def eye_mean(point: dict, key: str) -> float:
