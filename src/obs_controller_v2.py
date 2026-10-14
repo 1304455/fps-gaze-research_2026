@@ -61,6 +61,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+# obsws-python は接続時に INFO で接続パラメータ（パスワードを含む）をログに出すため、WARNING 以上に絞る。
+# 接続の成否は本モジュール自身が [OBS] のログで記録する。
+logging.getLogger("obsws_python").setLevel(logging.WARNING)
+
 # ---- ディレクトリ再編対応: sys.path 設定 ------------------------------------
 _THIS_FILE = Path(__file__).resolve()
 _SRC_DIR = _THIS_FILE.parent if _THIS_FILE.parent.name == "src" else None

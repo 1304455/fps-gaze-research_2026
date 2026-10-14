@@ -1,0 +1,3 @@
+# -*- coding: utf-8 -*-
+# 開発・テスト用（python -m pytest）
+pytest

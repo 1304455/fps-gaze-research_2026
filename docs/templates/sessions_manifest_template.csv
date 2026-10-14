@@ -1,0 +1,2 @@
+session_base,participant_id,group,rank_current,rank_peak,map,agent,role,start_side,game_resolution,aspect,minimap_settings,eye_screen_distance_cm,calibration_file,video_path,notes
+gaze_P01_1_default_20261020_140358,P01,low,Silver2,Silver3,Ascent,Sova,initiator,attack,3840x2160,16:9,"rotate=on;zoom=0.9;fixed=off",65.0,data/raw/calib_P01_20261020_135500.json,C:\Users\kawalab\Videos\2026-10-20 14-04-19.mp4,記入例（この行は削除して使う）
