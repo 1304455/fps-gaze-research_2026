@@ -71,10 +71,13 @@ python .\src\visualizer\gaze_visualizer_v3.py auto-sync $csv $mp4
 - [ ] delta が 6.3〜31.3 ms の範囲（これまでの実測は 22〜26 ms）。範囲外ならそのセッションに印を付ける
 - 目で確認したいときは `--verify` を付けると確認画面が開く
 
-（任意）動画に視線を描き込む（時間がかかるので後回しでもよい。出力は `data\processed\`）：
+（任意）動画に視線を描き込む（出力は `data\processed\`）：
 ```powershell
-python .\src\visualizer\gaze_visualizer_v3.py render $csv $mp4 --modes beeswarm scanpath heatmap
+python .\src\visualizer\gaze_visualizer_v3.py render $csv $mp4 --modes heatmap --no-audio
 ```
+- **時間がかかる**：3モードで録画の約8倍（13分の試合で約100分。10/20 の実測）。解析には不要なので、
+  全手順が終わってから、確認したいセッションだけ、必要なモードだけ描く
+- ffmpeg が無いと音声の合成に失敗して無音で出力される（警告が出るだけ）。最初から `--no-audio` を付ければ警告は出ない
 
 ## 5. 台帳に1行書く（ver3 が読むので解析の前に）
 
@@ -96,6 +99,14 @@ $base; $calib; $mp4              # この3つを台帳に貼り付ける
   - その他：マップ・エージェント・攻守など
 - Excel で保存するときは「**CSV UTF-8**」形式を選ぶ
 - 空欄の行は集計で無視される
+
+書けたか確認する（**この表示に今回の `$base` の行が出るまで手順7に進まない**）：
+```powershell
+Import-Csv .\data\sessions_manifest.csv -Encoding UTF8 | Format-Table session_base, participant_id, group, calibration_file
+```
+- [ ] 今回の `$base` の行がある
+- [ ] 記入例の行（`gaze_P01_1_default_20261020_140358`）が残っていない
+- 台帳に行が無いと、ver3 は警告だけ出して解像度の確認を飛ばし、集計ではそのセッションが参加者集計から外れる（10/20 の通し確認で発生）
 
 ## 6. 分析区間の注釈
 
@@ -119,7 +130,7 @@ python .\src\visualizer\segment_annotator.py $mp4 --session-base $base --start-s
 
 - 出力は `data\annotations\<base>_segments.csv`
 - 途中で閉じても、次の起動で続きから再開できる
-- 攻撃側から始まらなかった試合は `--start-side defense` を付ける
+- 攻撃側から始まらなかった試合は `--start-side defense` を付ける（綴りは米国式の `defense`。`defence` はエラーになる）
 
 ## 7. AOI 解析（I-DT）
 
@@ -158,6 +169,33 @@ python .\src\aoi_detector\aoi_analysis-ver3.py `
   - [ ] `min_segment_coverage`：0.9 未満なら、区間の一部が記録の範囲外にはみ出している
   - [ ] `missing_gaps`：欠測の長さの分布
 - 「出力先に条件の違う結果がある」と止まったら、何が違うのかを確認してから `--overwrite` を付けて実行し直す
+- 主解析の `qc.json` は `data\processed\aoi_result\<base>\`、感度分析のものは `data\processed\aoi_result_fixed650\<base>\`。
+  眼の距離の実測値（`eye_distance_used.mm`、`source: measured`）は主解析の方にしか出ない
+
+### 注視0件の AOI の確認
+
+ver3 が「注視0件のAOI」を出したら、「見ていない」のか「測れていない」のかを次で切り分ける（`$base` は手順3の変数）：
+```powershell
+@'
+import sys
+import pandas as pd
+d = sys.argv[1]
+f = pd.read_csv(d + r"\fixations.csv", encoding="utf-8-sig")
+s = pd.read_csv(d + r"\samples_classified.csv", encoding="utf-8-sig", low_memory=False)
+s = s[s["sample_class"] != "out_of_segment"]
+print("== AOI ごとのサンプル分類（区間内）==")
+print(pd.crosstab(s["sample_aoi"].fillna("(invalid)"), s["sample_class"]))
+print("\n== 下部（重心 y >= 0.80）の注視の y の分布。下のバーの AOI は y 0.895 から ==")
+b = f[f["centroid_y"] >= 0.80]
+print(pd.cut(b["centroid_y"], [0.80, 0.85, 0.87, 0.895, 0.92, 0.95, 1.0]).value_counts().sort_index())
+print("\n== 重心 y が最も下の注視 10 件 ==")
+print(f.nlargest(10, "centroid_y")[["segment_id", "start_sync_sec", "duration_sec", "centroid_x", "centroid_y", "aoi"]])
+'@ | python - ".\data\processed\aoi_result\$base"
+```
+読み方：
+- AOI 内のサンプルが `aoi_nonfixation` だけある → 視線は通ったが 100 ms 以上とどまっていない（ちらっと見た／通過）
+- 注視の重心が y 0.85〜0.895（AOI のすぐ上）に集まっている → 下のバーの上向きのずれ（約 0.4〜0.7° ≒ 正規化で 0.015〜0.025）で AOI の外に出ている疑い（測れていない）
+- y 0.85 より下に注視もサンプルもほとんど無い → 区間内（生存中）に下のバーを見ていない
 
 ## 8. 集計
 
