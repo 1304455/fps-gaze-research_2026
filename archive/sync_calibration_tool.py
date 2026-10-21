@@ -8,7 +8,7 @@ Tobii Pro Spark + OBS の「開始同期オフセット」を実測するため�
 --------------------------------------------------------------------------
 【背景・このツールが解決する問題】
 
-tobii_capture_with_sync_flash_v4.py の start_sync では、Tobii最初の視線
+tobii_capture_with_sync_flash_v5.py の start_sync では、Tobii最初の視線
 サンプル到達時刻を基準に、OBS側の時刻として
 
     - delta_sec_request_based   : OBSへ録画開始を「要求」した時刻との差分
@@ -79,7 +79,7 @@ Tobii基準からの経過時間(T+ x.xxx s)」を画面に表示し続ける。
      --point は「動画再生位置(秒)=読み取ったT+の値(秒)」の形式。
      複数指定すると平均・ばらつき・ドリフト(回帰の傾き)も表示する。
 
-必要パッケージ: tobii_capture_with_sync_flash_v4.py および obs_controller_v2.py
+必要パッケージ: tobii_capture_with_sync_flash_v5.py および obs_controller_v2.py
 と同じディレクトリに配置し、同じ依存パッケージ(tobii-research, pygame,
 screeninfo, obsws-python)がインストールされていること。
 --------------------------------------------------------------------------
@@ -118,9 +118,9 @@ if str(_PROJECT_ROOT) not in sys.path:
 # 既存の本番用スクリプトから、検証済みのTobii取得ロジック・ディスプレイ
 # 選択ロジックを再利用する(同じロジックの重複実装によるズレを避けるため)。
 try:
-    import tobii_capture_with_sync_flash_v4 as tcap
+    import tobii_capture_with_sync_flash_v5 as tcap
 except ImportError:
-    from gaze_estimation import tobii_capture_with_sync_flash_v4 as tcap
+    from gaze_estimation import tobii_capture_with_sync_flash_v5 as tcap
 
 try:
     from obs_controller_v2 import ObsConfig, ObsController, compute_start_sync_metrics

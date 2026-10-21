@@ -1,0 +1,9 @@
+{
+  "obs_enabled": true,
+  "obs_host": "localhost",
+  "obs_port": 4455,
+  "obs_password": "<OBS の WebSocket サーバー設定で決めたパスワード>",
+  "obs_require_success": true,
+  "obs_wait_for_started_event": true,
+  "obs_timeout_sec": 3.0
+}
