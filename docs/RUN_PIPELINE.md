@@ -50,6 +50,21 @@ python .\src\gaze_estimation\tobii_capture_with_sync_flash_v5.py --subject $subj
 - `--max-duration 3600` は止め忘れの安全装置（1時間）
 - [ ] 終了後、`data\raw` に `gaze_<subj>_1_default_<日時>.csv` / `_meta.json` / ログがある
 
+## 2b. 試合後の検証（較正はしない。試合が終わったら席を立つ前にすぐ）
+
+試合中に姿勢や Spark との位置関係がずれて精度がどれだけ落ちたかを記録する（2026-10-21 合意）。
+**姿勢を直さず、試合を終えたときの座り方のまま**行う。位置ガイドは姿勢の記録だけに使うので、許容幅を広げてすぐ OK になるようにする。
+
+```powershell
+python .\src\gaze_estimation\calibrate_validate.py --subject "${subj}-post" --validate-only --tolerance-z-mm 200 --tolerance-x-mm 200
+$post = (Get-ChildItem ".\data\raw\calib_${subj}-post_*.json" | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python .\src\analysis\calib_compare.py $calib $post --group-by none
+```
+- subject は `<参加者ID>-post` にする（`calib_${subj}_*.json` に混ざらず、手順1の `$calib` を取り違えない）
+- `--reference` は付けない（標準姿勢に合わせ直すと、試合中の姿勢での精度にならない）
+- 合否（`passed`）は記録だけで、除外基準には使わない。卒論では「試合前 → 試合後の精度の変化」と、試合後の眼の距離（`head_z_mm`）を報告する
+- `calib_compare` の2行（試合前・試合後）で `mean_accuracy_deg`、`hud_max_accuracy_deg`、上下のバーのずれ、`head_z_mm` を比べる
+
 ## 3. ファイルの場所を変数にまとめる
 
 ```powershell
@@ -88,7 +103,7 @@ python .\src\visualizer\gaze_visualizer_v3.py render $csv $mp4 --modes heatmap -
 $participant = "P02"            # 参加者ID（$PID は PowerShell の予約変数なので使わない）
 $group = "low"                  # low / high
 $side  = "attack"               # 最初のラウンドの攻守（attack / defense）。手順6の注釈でも同じ値を使う
-$notes = "ETM相対角度12°"
+$notes = "ETM相対角度12°;post=" + (Split-Path $post -Leaf)   # 試合後の検証のファイル名（手順2b）
 $m = ".\data\sessions_manifest.csv"
 if (-not (Test-Path $m)) { Set-Content $m -Value (Get-Content .\docs\templates\sessions_manifest_template.csv -TotalCount 1 -Encoding UTF8) -Encoding UTF8 }
 $lines = @(Get-Content $m -Encoding UTF8)
