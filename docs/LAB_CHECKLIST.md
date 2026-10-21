@@ -260,7 +260,26 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 > 手順書の台帳の手順は、手編集をやめて変数から追記する方法に変えた（`$side` で注釈と台帳の攻守もそろえる）。
 > qc_report の `eye_screen_distance_measured_mm` は台帳の `eye_screen_distance_cm`（巻尺の値）× 10 で、眼位置の実測ではない（今回の 650 は台帳に書いた 65 cm）。
 
-- [ ] 台帳の `start_side` を defense に直し、感度分析の集計を Excel を閉じてから再実行する
+> 2026-10-21：感度分析の集計も Excel を閉じて再実行し成功（fixed 650 mm、注視 929 件、`resolution_ok` / `calibration_passed` True）。
+>
+> `aoi_check.py --calib calib_TEST_player_20261020_180419.json`（距離 650 mm で換算）の下のバー：
+>
+> | AOI | 高さ | accuracy | bias_y（負＝上向き） | 中心を見たとき AOI 外 |
+> |---|---|---|---|---|
+> | health_armor | 2.53° | 0.62° | −0.48° | False |
+> | abilities | 2.81° | 0.98° | −0.69° | False |
+> | ammo_weapon | 2.53° | 0.89° | −0.29° | False |
+> | credits | **0.84°**（1° 未満） | 0.47° | −0.24° | False |
+>
+> 解釈：health_armor・abilities・ammo_weapon は高さ 2.5〜2.8° に対してずれが 0.3〜0.7° で、中心を見れば AOI 内に入る。
+> 上向きのずれで外れるのは AOI の上端付近を見たときだけなので、**「測れていない」だけで注視0件は説明しにくい**（見ていない／短く見ただけの可能性が高い。
+> 切り分けは「注視0件の AOI の確認」スクリプトで行う）。**credits は短辺 0.84° で精度に対して小さすぎ**、
+> しかも主に購入フェーズ（分析区間外）で見る要素なので、主解析での扱いを決める必要がある（研究上の判断。下のチェック項目）。
+> 上部の enemy_team_status も「短辺/2 < accuracy」の警告が出た（高さ 1.82°、accuracy 0.99°）が、注視はあった。
+
+- [x] 台帳の `start_side` を defense に直し、感度分析の集計を Excel を閉じてから再実行する（10/21）
+- [ ] 「注視0件の AOI の確認」スクリプト（RUN_PIPELINE.md）の出力で、下のバーを見ていないのか、短く見ただけなのかを確かめる
+- [ ] credits の扱いを決める（主解析に残して限界として書く／探索指標に回す／除外する）
 - [x] 台帳の記入例の行を削除し、このセッションの行を書いて、ver3 と集計を `--overwrite` 付きで実行し直す（10/21、主解析）
       （台帳の行が `qc.json` の `manifest_row` と `resolution_check` に入り、`qc_report` の `calibration_passed` が埋まることを確認）
 - [ ] 下のバーの注視0件が「見ていない」のか「測れていない」のかを確かめる（RUN_PIPELINE.md の「注視0件の AOI の確認」）
