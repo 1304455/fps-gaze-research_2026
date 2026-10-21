@@ -210,13 +210,18 @@ print(f.nlargest(10, "centroid_y")[["segment_id", "start_sync_sec", "duration_se
 
 ## 8. 集計
 
+初回だけ、合意した除外基準をコピーする：
 ```powershell
-python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv
-python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650
+if (-not (Test-Path .\data\qc_criteria.json)) { Copy-Item .\docs\templates\qc_criteria_template.json .\data\qc_criteria.json }
+```
+```powershell
+python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json
+python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json --results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650
 ```
 - 出力先：`data\processed\aggregate\`
 - [ ] `qc_report` で、今回のセッションが `has_result=True`、`calibration_passed` が埋まっている
-- 除外基準（`--qc-criteria`）はまだ合意していないので付けない（付けなければ除外の判定はしない）
+- 除外基準は 10/21 に合意した分だけ評価される（分析時間・coverage の下限は未決で null）。`qc_report` の `exclude_candidate` と `flag_*` 列、`n_criteria_evaluated`（6 になる）を見る
+- テンプレートの基準を変えたら（未決の値が決まったら）`data\qc_criteria.json` にもコピーし直す
 
 ---
 

@@ -97,8 +97,10 @@ class TestSampleClass:
     def test_sample_in_aoi_but_fixation_elsewhere_is_nonfixation(self, aois):
         # 1つの注視：15サンプルは crosshair の円の外、5サンプルは円の内側の縁（分散は 1° 未満）。
         # 重心は円の外なので注視の AOI は outside。円内の5サンプルは「AOIへの注視」ではない
+        # 半径は AOI JSON から取る（10/21 に radius_deg=2.0 へ変更。値を直書きすると定義の変更で壊れる）
         cx, cy = CROSSHAIR
-        outside_pt, inside_pt = (cx + 0.038, cy), (cx + 0.034, cy)
+        r = next(a for a in aois if a["name"] == "crosshair")["radius_x"]
+        outside_pt, inside_pt = (cx + r + 0.003, cy), (cx + r - 0.001, cy)
         pts = [outside_pt] * 15 + [inside_pt] * 5
         res = gm.analyze_session(make_df(pts), aois, DISPLAY, gm.merge_params(None), None)
         assert len(res["fixations"]) == 1

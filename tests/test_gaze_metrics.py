@@ -463,7 +463,7 @@ class TestAoiCheck:
         # 検証点の無い AOI は全点平均で、方向の判定はしない
         assert t.loc["minimap", "accuracy_deg"] == 0.8
         assert t.loc["minimap", "flag_center_gaze_outside"] is None
-        assert t.loc["crosshair", "width_deg"] / 2 == pytest.approx(1.85, abs=0.01)
+        assert t.loc["crosshair", "width_deg"] / 2 == pytest.approx(2.0, abs=0.01)  # 10/21 合意：radius_deg=2.0
 
     def test_display_geometry_check(self):
         from aoi_check import display_geometry_check

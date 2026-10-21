@@ -289,6 +289,7 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 - [x] 「注視0件の AOI の確認」スクリプト（RUN_PIPELINE.md）の出力で、下のバーを見ていないのか、短く見ただけなのかを確かめる（10/21：見ていない）
 - [x] credits の扱いを決める → 10/21：探索指標に回す（CLAUDE.md §2）
 - [ ] 予備実験の他の参加者でも、下のバーの注視が0件に近いか確認する
+- [ ] 10/21 に crosshair を `radius_deg: 2.0` に変えたので、それより前に解析したセッションを ver3 の `--overwrite` 付きで解析し直す（AOI の中身の違いで上書き防止が働く）。集計は `--qc-criteria .\data\qc_criteria.json` を付ける（RUN_PIPELINE 手順8）
 - [x] 台帳の記入例の行を削除し、このセッションの行を書いて、ver3 と集計を `--overwrite` 付きで実行し直す（10/21、主解析）
       （台帳の行が `qc.json` の `manifest_row` と `resolution_check` に入り、`qc_report` の `calibration_passed` が埋まることを確認）
 - [ ] 下のバーの注視0件が「見ていない」のか「測れていない」のかを確かめる（RUN_PIPELINE.md の「注視0件の AOI の確認」）

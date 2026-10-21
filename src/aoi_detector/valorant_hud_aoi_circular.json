@@ -15,7 +15,7 @@
   },
   "viewing_distance_mm": 650,
   "viewing_distance_note": "radius_deg で定義したAOIを正規化半径に換算するときの設計上の眼−画面距離（実験条件 約65 cm）。I-DT の距離は解析パラメータ側で指定する",
-  "note": "左上=(0,0)、右下=(1,1) の正規化座標です。minimap と crosshair は type=circle で定義しています。circle の radius_x/radius_y は正規化座標上の半径であり、基準解像度上で円形になるように設定しています。crosshair の radius_x=0.0351（=135 px）は「60 cm で半径2°」由来の値で、65 cm では半径約1.85°に相当する。radius_deg で定義し直すかは未決定（aoi_check.py で視角を確認できる）。",
+  "note": "左上=(0,0)、右下=(1,1) の正規化座標です。minimap と crosshair は type=circle で定義しています。circle の radius_x/radius_y は正規化座標上の半径であり、基準解像度上で円形になるように設定しています。minimap は radius_x/radius_y（正規化半径）で直接指定。crosshair は 2026-10-21 合意で radius_deg=2.0（viewing_distance_mm=650 で換算、正規化半径 約0.0380/0.0676）に定義し直した。旧値 radius_x=0.0351（=135 px）は「60 cm で半径2°」由来で、65 cm では半径約1.85°だった（aoi_check.py で視角を確認できる）。",
   "aois": [
     {
       "name": "minimap",
@@ -59,8 +59,7 @@
       "description": "画面中央の照準（クロスヘア）",
       "center_x": 0.5,
       "center_y": 0.5,
-      "radius_x": 0.0351,
-      "radius_y": 0.0625
+      "radius_deg": 2.0
     },
     {
       "name": "health_armor",
