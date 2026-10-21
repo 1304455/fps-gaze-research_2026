@@ -246,6 +246,11 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 > 200 ms の閾値（訪問をつなぐか）はこの試合では結果に影響していない（`n_same_aoi_visit_breaks_by_long_gap` 0）。瞬目が 75 ms 以下の欠測として
 > 現れているか、プレイ中は瞬目が少ないか（どちらかはこのデータだけでは区別できない）。閾値の妥当性は予備実験の他のデータで引き続き確認する。
 
+> 2026-10-21 の再実行：台帳の行を書いて主解析を再実行 → `qc.json` に `manifest_row` が入り、**解像度チェックが動いた**（`checked: true`）。
+> ただし Excel が `aspect` の `16:9` を時刻 `16:09` に変えていて不一致と判定された（チェックは正しく働いた）。
+> `--allow-resolution-mismatch` で通していたので、台帳を直して付けずに再実行が必要。`participant_id` も空だった。
+> 感度分析は、行末の `` ` `` の前に空白が無く `--overwrite` に改行が入って失敗（手順書に注意と1行版を追加）。
+
 - [ ] 台帳の記入例の行を削除し、このセッションの行を書いて、ver3 と集計を `--overwrite` 付きで実行し直す
       （台帳の行が `qc.json` の `manifest_row` と `resolution_check` に入り、`qc_report` の `calibration_passed` が埋まることを確認）
 - [ ] 下のバーの注視0件が「見ていない」のか「測れていない」のかを確かめる（RUN_PIPELINE.md の「注視0件の AOI の確認」）

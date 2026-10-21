@@ -98,6 +98,10 @@ $base; $calib; $mp4              # この3つを台帳に貼り付ける
   - `notes`：`ETM 相対角度 12°`
   - その他：マップ・エージェント・攻守など
 - Excel で保存するときは「**CSV UTF-8**」形式を選ぶ
+- **Excel は `16:9` を時刻と解釈して `16:09` に変えてしまう**（10/21 に発生。ver3 の解像度チェックで止まる）。
+  台帳はメモ帳で編集する（`notepad .\data\sessions_manifest.csv`）か、Excel なら列の書式を「文字列」にしてから入力する。
+  止まったときに `--allow-resolution-mismatch` で通さず、台帳を直す
+- `participant_id` は空にしない（空だと参加者ごとの集計に入らない）
 - 空欄の行は集計で無視される
 
 書けたか確認する（**この表示に今回の `$base` の行が出るまで手順7に進まない**）：
@@ -156,7 +160,14 @@ python .\src\aoi_detector\aoi_analysis-ver3.py `
     --output-dir .\data\processed\aoi_result_fixed650
 ```
 
-- 行末のバッククォート（`` ` ``）は行を続ける記号。**後ろに空白を入れない**
+- 行末のバッククォート（`` ` ``）は行を続ける記号。**前に空白を1つ入れ、後ろには何も入れない**。
+  `--overwrite`` ` のように前の空白が無いと、改行が引数に入って `unrecognized arguments` や `Invalid argument` になる（10/21 に発生）。
+  迷ったら1行で書く（下の「1行版」）
+- 1行版（主解析と感度分析。やり直しのときは末尾に ` --overwrite` を足す）：
+  ```powershell
+  python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_detector\valorant_hud_aoi_circular.json --segments ".\data\annotations\${base}_segments.csv" --sync $sync --manifest .\data\sessions_manifest.csv
+  python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_detector\valorant_hud_aoi_circular.json --segments ".\data\annotations\${base}_segments.csv" --sync $sync --manifest .\data\sessions_manifest.csv --params .\src\aoi_detector\analysis_params_sensitivity_fixed650.json --output-dir .\data\processed\aoi_result_fixed650
+  ```
 - 出力先：`data\processed\aoi_result\<base>\`
   - `samples_classified.csv`：サンプルの分類
   - `fixations.csv`：注視
