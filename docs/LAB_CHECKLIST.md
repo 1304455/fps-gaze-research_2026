@@ -20,8 +20,10 @@ pip install -r requirements.txt -r requirements-dev.txt; if ($?) { python -m pyt
 旧 README に OBS WebSocket のパスワードが平文で載っており、公開リポジトリの **git 履歴に残っている**。
 削除だけでは不十分なので、パスワードを変える。
 
-- [ ] OBS →「ツール」→「WebSocket サーバー設定」で新しいパスワードを生成
-- [ ] `Copy-Item .\docs\templates\obs_config_template.json .\obs_config.json` → `obs_password` を記入
+> 2026-10-21：パスワードは変更済み（ユーザー確認）。10/20 の計測で obs_config.json から OBS に接続できている。
+
+- [x] OBS →「ツール」→「WebSocket サーバー設定」で新しいパスワードを生成
+- [x] `Copy-Item .\docs\templates\obs_config_template.json .\obs_config.json` → `obs_password` を記入
 - [ ] `git status` に obs_config.json が出ない（.gitignore 済み）
 
 ## 2. キャリブレーション＋検証ツール（T2）
