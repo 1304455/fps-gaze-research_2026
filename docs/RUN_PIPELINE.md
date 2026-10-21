@@ -186,6 +186,7 @@ python .\src\aoi_detector\aoi_analysis-ver3.py `
 
 ver3 が「注視0件のAOI」を出したら、「見ていない」のか「測れていない」のかを次で切り分ける（`$base` は手順3の変数）：
 ```powershell
+$OutputEncoding = [System.Text.Encoding]::UTF8   # これが無いと python に渡すコードの日本語が「??」になる
 @'
 import sys
 import pandas as pd
