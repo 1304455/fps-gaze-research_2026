@@ -251,7 +251,17 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 > `--allow-resolution-mismatch` で通していたので、台帳を直して付けずに再実行が必要。`participant_id` も空だった。
 > 感度分析は、行末の `` ` `` の前に空白が無く `--overwrite` に改行が入って失敗（手順書に注意と1行版を追加）。
 
-- [ ] 台帳の記入例の行を削除し、このセッションの行を書いて、ver3 と集計を `--overwrite` 付きで実行し直す
+> 2026-10-21 の再々実行：メモ帳で直した台帳は列が1つずれていた（`session_base` が `TEST_player` に）→ ver3・集計とも警告で検出。
+> 台帳を変数から書き出し直して実行 → **主解析・集計で警告なし**。qc_report：`in_manifest` True、`resolution_ok` True、
+> `calibration_passed` True（平均 0.68°）、`eye_screen_distance_source` measured（633 mm）、感度分析は fixed（650 mm）。
+> 台帳と解析・集計の結合（解像度チェック・較正の合否・参加者集計）が実データで動くことを確認した。
+> 感度分析の集計は、`aggregate_fixed650\qc_report.csv` を Excel で開いていたため `PermissionError` で書き出せなかった（閉じて再実行）。
+> 台帳の `start_side` は attack と書いたが、注釈は defense で開始していた → 台帳を defense に直す。
+> 手順書の台帳の手順は、手編集をやめて変数から追記する方法に変えた（`$side` で注釈と台帳の攻守もそろえる）。
+> qc_report の `eye_screen_distance_measured_mm` は台帳の `eye_screen_distance_cm`（巻尺の値）× 10 で、眼位置の実測ではない（今回の 650 は台帳に書いた 65 cm）。
+
+- [ ] 台帳の `start_side` を defense に直し、感度分析の集計を Excel を閉じてから再実行する
+- [x] 台帳の記入例の行を削除し、このセッションの行を書いて、ver3 と集計を `--overwrite` 付きで実行し直す（10/21、主解析）
       （台帳の行が `qc.json` の `manifest_row` と `resolution_check` に入り、`qc_report` の `calibration_passed` が埋まることを確認）
 - [ ] 下のバーの注視0件が「見ていない」のか「測れていない」のかを確かめる（RUN_PIPELINE.md の「注視0件の AOI の確認」）
 - [ ] 同期の delta（confirmed_based）を予備実験のセッションごとに控える。25〜30 ms が続くなら、期待範囲の見直しを根拠データ付きで検討する

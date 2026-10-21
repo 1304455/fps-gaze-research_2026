@@ -81,41 +81,40 @@ python .\src\visualizer\gaze_visualizer_v3.py render $csv $mp4 --modes heatmap -
 
 ## 5. 台帳に1行書く（ver3 が読むので解析の前に）
 
-初回だけテンプレートをコピーする：
-```powershell
-if (-not (Test-Path .\data\sessions_manifest.csv)) { Copy-Item .\docs\templates\sessions_manifest_template.csv .\data\sessions_manifest.csv }
-$base; $calib; $mp4              # この3つを台帳に貼り付ける
-```
-- テンプレートの**記入例の行は削除**する
-- 書く列：
-  - `session_base`：`$base` の値
-  - `participant_id`
-  - `group`：low / high
-  - `game_resolution`：`3840x2160`
-  - `aspect`：`16:9`
-  - `calibration_file`：`$calib` の値（`data/raw/calib_...json` の形でよい）
-  - `video_path`：`$mp4` の値
-  - `notes`：`ETM 相対角度 12°`
-  - その他：マップ・エージェント・攻守など
-- Excel で保存するときは「**CSV UTF-8**」形式を選ぶ
-- **Excel は `16:9` を時刻と解釈して `16:09` に変えてしまう**（10/21 に発生。ver3 の解像度チェックで止まる）。
-  台帳はメモ帳で編集する（`notepad .\data\sessions_manifest.csv`）か、Excel なら列の書式を「文字列」にしてから入力する。
-  止まったときに `--allow-resolution-mismatch` で通さず、台帳を直す
-- `participant_id` は空にしない（空だと参加者ごとの集計に入らない）
-- 空欄の行は集計で無視される
+**手で編集せず、変数から行を組み立てて追記する**（10/20〜21 に、記入例の消し忘れ・行の書き忘れ・Excel による `16:9`→`16:09` の変換・
+メモ帳での列ずれが続いたため）。マップ・エージェントなど後から分かる列だけ、あとでメモ帳で足す。
 
-書けたか確認する（**この表示に今回の `$base` の行が出るまで手順7に進まない**）：
 ```powershell
-Import-Csv .\data\sessions_manifest.csv -Encoding UTF8 | Format-Table session_base, participant_id, group, calibration_file
+$participant = "P02"            # 参加者ID（$PID は PowerShell の予約変数なので使わない）
+$group = "low"                  # low / high
+$side  = "attack"               # 最初のラウンドの攻守（attack / defense）。手順6の注釈でも同じ値を使う
+$notes = "ETM相対角度12°"
+$m = ".\data\sessions_manifest.csv"
+if (-not (Test-Path $m)) { Set-Content $m -Value (Get-Content .\docs\templates\sessions_manifest_template.csv -TotalCount 1 -Encoding UTF8) -Encoding UTF8 }
+$lines = @(Get-Content $m -Encoding UTF8)
+if ($lines -match "^$base,") { Write-Warning "台帳に $base の行がもうあります。追記しません。" } else {
+    $row = "$base,$participant,$group,,,,,,$side,3840x2160,16:9,,,$calib,$mp4,$notes"
+    Set-Content $m -Value ($lines + $row) -Encoding UTF8
+}
+Import-Csv $m -Encoding UTF8 | Select-Object -Last 1 | Format-List
 ```
-- [ ] 今回の `$base` の行がある
-- [ ] 記入例の行（`gaze_P01_1_default_20261020_140358`）が残っていない
+- 初回は、テンプレートの**見出し行だけ**で台帳を作る（記入例の行は入らない）
+- 列の順：`session_base, participant_id, group, rank_current, rank_peak, map, agent, role, start_side, game_resolution, aspect,
+  minimap_settings, eye_screen_distance_cm, calibration_file, video_path, notes`（16列。空欄はカンマだけ）
+- `eye_screen_distance_cm` は巻尺で実際に測ったときだけ書く（解析の距離は眼位置の実測値を使うので、空欄でよい）
+- 値にカンマを入れない（`notes` は `;` で区切る）
+- 後から列を足すときは `notepad $m` で編集する。**Excel で開いて保存しない**（`16:9` が `16:09` に変わる。ver3 の解像度チェックで止まる。
+  止まったら `--allow-resolution-mismatch` で通さず台帳を直す）
+- **集計の前に、台帳・qc_report を Excel で開いていたら閉じる**（開いたままだと集計の書き出しが `PermissionError` で止まる。10/21 に発生）
+
+確認（**今回の `$base` の行が出て、列がずれていないことを見てから手順6に進む**）：
+- [ ] `session_base` が `$base`、`participant_id` / `group` / `start_side` / `aspect: 16:9` / `calibration_file` が正しい列に入っている
 - 台帳に行が無いと、ver3 は警告だけ出して解像度の確認を飛ばし、集計ではそのセッションが参加者集計から外れる（10/20 の通し確認で発生）
 
 ## 6. 分析区間の注釈
 
 ```powershell
-python .\src\visualizer\segment_annotator.py $mp4 --session-base $base --start-side attack
+python .\src\visualizer\segment_annotator.py $mp4 --session-base $base --start-side $side
 ```
 
 | キー | 動作 |
@@ -134,7 +133,7 @@ python .\src\visualizer\segment_annotator.py $mp4 --session-base $base --start-s
 
 - 出力は `data\annotations\<base>_segments.csv`
 - 途中で閉じても、次の起動で続きから再開できる
-- 攻撃側から始まらなかった試合は `--start-side defense` を付ける（綴りは米国式の `defense`。`defence` はエラーになる）
+- 守備側から始まった試合は、手順5で `$side = "defense"` にする（綴りは米国式の `defense`。`defence` はエラーになる）。台帳の `start_side` と注釈がそろう
 
 ## 7. AOI 解析（I-DT）
 
