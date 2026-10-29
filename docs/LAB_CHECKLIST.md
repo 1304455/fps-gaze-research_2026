@@ -286,7 +286,7 @@ python .\src\gaze_estimation\calibrate_validate.py --subject TEST --validate-onl
 >       合否と、誤差 1.5° 超かつ precision 0.8 超の点の数、ずれと次の点の向きの一致を見る
 > - [ ] B.（A でも先読みが残る場合）`--settle-ms 200` だけ変える。採用するなら検証手順の変更なので、全員・実験者の基準を同じ値にそろえる（要相談）
 > - [ ] C. 較正の直後に `--validate-only` をもう1回。2回の検証で上段のずれが変われば検証のときの問題（頭・注視）、同じなら較正の問題
-> - [ ] `calib_PL01_20261029_155725.json`（実験者）を PL01 の比較や台帳に使わない（扱いは要決定）
+> - [ ] `calib_PL01_20261029_155725.json`（実験者）を `data\raw\_excluded\` に移し、理由を同じフォルダの README.txt に書く（10/29 決定。中身は変えず、ワイルドカードや `Select-Object -Last 1` に拾われないようにする）
 
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
