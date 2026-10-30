@@ -109,3 +109,35 @@ def test_calib_compare_min_used_rate():
     old = calib_point_usage({"points_used_by_sdk": [{"x": 0.5, "y": 0.5}]})  # 1.5.0 以前
     assert math.isnan(old["calib_min_used_rate"]) and old["calib_min_used_point"] is None
     assert calib_point_usage({"status": "not_performed (--validate-only)"})["calib_min_used_point"] is None
+
+
+# ---------------------------------------------------------------------------
+# 1.7.0：検証の前の練習用の点
+# ---------------------------------------------------------------------------
+
+def test_run_warmup_measures_center_and_unsubscribes():
+    from test_calib_eye_position_order import DA, _FakeEyetracker, _FakeScreen, _FakeTr
+    from calibrate_validate import run_warmup
+    et = _FakeEyetracker()
+    screen = _FakeScreen(et, bad_labels_xy=[])
+    w = run_warmup(_FakeTr(), et, screen, DA, shrink_sec=0.0, settle_ms=0.0, window_ms=1000.0)
+    assert screen.shown == [(0.5, 0.5)]
+    assert w["label"] == "warmup_center" and w["kind"] == "warmup"
+    assert w["accuracy_deg"] == pytest.approx(0.0, abs=1e-6) and "presentation_index" not in w
+    assert et.callback is None
+
+
+def test_warmup_does_not_change_judgement_or_order():
+    # 練習用の点は validation_points に入らないので、合否と提示順・乱数は練習点の有無で変わらない
+    import random
+    from test_calib_eye_position_order import DA, _FakeEyetracker, _FakeScreen, _FakeTr
+    from calibrate_validate import run_validation, run_warmup
+    targets = [{"label": f"t{i}", "kind": "grid", "x": x, "y": y}
+               for i, (x, y) in enumerate([(0.1, 0.1), (0.5, 0.1), (0.9, 0.1)])]
+    et1, et2 = _FakeEyetracker(), _FakeEyetracker()
+    s1, s2 = _FakeScreen(et1, []), _FakeScreen(et2, [])
+    r1 = run_validation(_FakeTr(), et1, s1, targets, DA, 0.0, 0.0, 1000.0, 1.5, random.Random(3))
+    run_warmup(_FakeTr(), et2, s2, DA, 0.0, 0.0, 1000.0)
+    r2 = run_validation(_FakeTr(), et2, s2, targets, DA, 0.0, 0.0, 1000.0, 1.5, random.Random(3))
+    assert s2.shown[1:] == s1.shown
+    assert [r["presentation_index"] for r in r1] == [r["presentation_index"] for r in r2]

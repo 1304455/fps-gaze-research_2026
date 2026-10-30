@@ -405,6 +405,26 @@ python .\src\analysis\calib_compare.py $calib --group-by none
 >   ただし PL01 では場所（左上）と先読みが重なり、実験者は1回だけなので区別できない。確かめ方：ランダムな順番の回を重ね、最初に出た点の1回目の誤差が、同じ点が別の順番で出たときより悪いかを見る
 - [ ] 確認できたら凍結。PL01 の手順 A・C は 1.6.0 で行う
 
+#### 2026-10-30：calibrate_validate 1.7.0（検証の前の練習用の点。凍結前に研究室PCで確認）
+
+決定（CLAUDE.md §2「検証の練習用の点」）：検証の前に中央に練習用の点を1回出し、`validation_warmup` に記録する（合否・全体平均・
+`validation_points`・`presentation_index`・乱数には使わない）。`parameters.warmup.enabled` に有無を残す（`--no-warmup` で出さない）。
+
+```powershell
+git pull
+python -m pytest
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); w=d['validation_warmup']; print(d['script']['version'], d['parameters']['warmup'], w['label'], round(w['accuracy_deg'],2)); f=[p for p in d['validation_points'] if (p.get('first_attempt') or p)['presentation_index']==0][0]; print('最初の点', f['label'], round((f.get('first_attempt') or f)['accuracy_deg'],2), '合否', d['summary']['passed'])" $calib
+python .\src\analysis\calib_compare.py $calib --group-by none
+```
+- [ ] `python -m pytest` が全件 passed
+- [ ] 検証の開始直後に中央の点が1回出てから、ランダムな順番の点が始まる（目視）
+- [ ] `script.version` が `1.7.0`、`validation_warmup` に中央の点の結果があり、`validation_points` は 17 点のまま
+- [ ] `calib_compare` が今までどおり動く（練習用の点は集計に入らない）
+- [ ] 確認できたら凍結し、main への PR を作る
+- [ ] 効果の確認（凍結後でよい）：1.7.0 の回を重ね、最初の点（presentation_index 0）の1回目の誤差がその回の他の点より悪い傾向が消えたかを見る（10/30 の4回：悪い方から 1・4・7・3 位）
+
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
 > 2026-10-13 実施（過去の試合映像を視聴）：60.1 Hz、欠測率 0.7%、start_sync（confirmed）23 ms（既知 18.8±2.5 ms の範囲内）。

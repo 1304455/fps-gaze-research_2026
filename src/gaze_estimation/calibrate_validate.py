@@ -63,10 +63,11 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
 
 from aoi_geometry import aoi_center  # noqa: E402
 
-SCRIPT_VERSION = "1.6.0"
+SCRIPT_VERSION = "1.7.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
+WARMUP_TARGET = {"label": "warmup_center", "kind": "warmup", "x": 0.5, "y": 0.5}
 GRID_VALIDATION_POINTS = [(0.1, 0.1), (0.5, 0.1), (0.9, 0.1), (0.1, 0.5), (0.5, 0.5),
                           (0.9, 0.5), (0.1, 0.9), (0.5, 0.9), (0.9, 0.9)]
 
@@ -552,6 +553,31 @@ def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], di
     return results
 
 
+def run_warmup(tr, eyetracker, screen: TargetScreen, display_area: dict, shrink_sec: float, settle_ms: float,
+               window_ms: float, target: "dict | None" = None) -> dict:
+    """
+    検証の前に練習用の点（既定は中央）を1回だけ提示して測る（1.7.0）。
+    最初に提示した点の誤差が大きくなる傾向（LAB_CHECKLIST 2c、10/30）への対策。結果は合否・validation_points・
+    presentation_index・点の順番の乱数のどれにも使わず、記録（validation_warmup）だけに残す。
+    """
+    tgt = dict(target or WARMUP_TARGET)
+    collector = SampleCollector()
+    eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA, collector.callback, as_dictionary=True)
+    try:
+        if not screen.target(tgt["x"], tgt["y"], shrink_sec):
+            raise KeyboardInterrupt
+        onset = time.perf_counter()
+        if not screen.hold((settle_ms + window_ms) / 1000.0 + 0.05):
+            raise KeyboardInterrupt
+        win = collector.between(onset + settle_ms / 1000.0, onset + (settle_ms + window_ms) / 1000.0)
+    finally:
+        eyetracker.unsubscribe_from(tr.EYETRACKER_GAZE_DATA, collector.callback)
+    m = point_metrics(win, (tgt["x"], tgt["y"]), display_area)
+    acc = m["accuracy_deg"]
+    print(f"  {tgt['label']:<28} accuracy={'—' if acc is None else f'{acc:.2f}°'}  n={m['n_samples_window']}（練習用の点。判定には使わない）")
+    return {**tgt, **m}
+
+
 def check_only(tr, eyetracker) -> int:
     print(f"デバイス: {eyetracker.device_name} / モデル: {eyetracker.model} / シリアル: "
           f"{getattr(eyetracker, 'serial_number', None)}")
@@ -589,6 +615,8 @@ def main(argv=None):
     p.add_argument("--retry-threshold-deg", type=float, default=None,
                    help="検証で accuracy がこの値を超えた点を1回だけ測り直す（既定: --max-hud-accuracy-deg と同じ）")
     p.add_argument("--no-retry", action="store_true", help="検証点の測り直しをしない")
+    p.add_argument("--no-warmup", action="store_true",
+                   help="検証の前の練習用の点（中央、判定には使わない）を出さない（1.6.0 以前と同じ）")
     p.add_argument("--fixed-order", action="store_true",
                    help="較正点・検証点を 1.4.0 以前と同じ固定の順番で出す（既定はランダムな順番）")
     p.add_argument("--order-seed", type=int, default=None,
@@ -658,6 +686,7 @@ def main(argv=None):
     screen = TargetScreen(monitor, pygame, args.font)
     calibration = None
     head_position = None
+    warmup = None
     try:
         if not args.skip_position_guide or args.position_only:
             head_position = run_position_guide(
@@ -680,6 +709,8 @@ def main(argv=None):
                       "結果は『不合格』として保存します。姿勢を直して、もう一度実行してください。")
         if not screen.message("検証：同じように点を見続けてください\n（何かキーを押すと開始 / ESC で中止）"):
             return
+        if not args.no_warmup:
+            warmup = run_warmup(tr, eyetracker, screen, display_area, args.shrink_sec, args.settle_ms, args.window_ms)
         points = run_validation(tr, eyetracker, screen, targets, display_area,
                                 args.shrink_sec, args.settle_ms, args.window_ms, retry_thr, rng)
     except KeyboardInterrupt:
@@ -720,7 +751,8 @@ def main(argv=None):
         "parameters": {"settle_ms": args.settle_ms, "window_ms": args.window_ms, "shrink_sec": args.shrink_sec,
                        "calib_margin": args.calib_margin, "calibration_points": calib_points,
                        "retry_threshold_deg": retry_thr,
-                       "presentation_order": {"randomized": not args.fixed_order, "seed": order_seed}},
+                       "presentation_order": {"randomized": not args.fixed_order, "seed": order_seed},
+                       "warmup": {"enabled": not args.no_warmup, "x": WARMUP_TARGET["x"], "y": WARMUP_TARGET["y"]}},
         "head_position": head_position,
         "definitions": {
             "accuracy_deg": "眼位置(gaze_origin)から注視点(gaze_point, UCS)へのベクトルと、目標点へのベクトルの角度差の平均",
@@ -739,6 +771,9 @@ def main(argv=None):
                                   "n_valid_not_used：有効だが使わなかった＝視線が点から遠すぎた等、n_invalid：無効）、used_rate、"
                                   "使ったサンプル・使わなかったサンプルの平均のずれ（*_offset_*_norm、サンプル − 較正点、正の y は下向き）。"
                                   "ずれは補正を作ったデータに当てた値で精度の指標ではない。両眼の成功以外では空",
+            "validation_warmup": "1.7.0 から、検証の前に練習用の点（中央）を1回提示して測った結果。最初に提示した点の誤差が"
+                                 "大きくなる傾向への対策で、合否・全体平均・validation_points・presentation_index・点の順番の乱数には"
+                                 "使わない（--no-warmup なら null）",
             "presentation_order": "1.5.0 から、較正点は中央を最初に固定して残り8点を、検証点は1周目・測り直しとも全点を、"
                                   "乱数シード seed でランダムな順に提示する（randomized=false は --fixed-order＝1.4.0 以前の固定の順番）。"
                                   "parameters.calibration_points は実際の提示順。validation_points は提示順にかかわらず一覧の順に並べる",
@@ -747,6 +782,7 @@ def main(argv=None):
         },
         "calibration": calibration if calibration else {"status": "not_performed (--validate-only)"},
         "validation_points": points,
+        "validation_warmup": warmup,
         "summary": verdict,
     }
     with open(out, "w", encoding="utf-8") as f:
