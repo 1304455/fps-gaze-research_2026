@@ -310,12 +310,21 @@ $calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime
 python .\src\analysis\calib_compare.py $calib --group-by none
 python .\src\analysis\calib_anticipation.py $calib
 ```
-- [ ] `python -m pytest` が全件 passed
-- [ ] 較正＋検証が 1.3.0 と同じように最後まで動き、`script.version` が `1.4.0`
-- [ ] JSON の各検証点に `eye_xyz_mm`（z が 600〜700 mm 程度）、`binocular_avg`、`presentation_index`、`presentation_phase` がある
+- [x] `python -m pytest` が全件 passed
+- [x] 較正＋検証が 1.3.0 と同じように最後まで動き、`script.version` が `1.4.0`
+- [x] JSON の各検証点に `eye_xyz_mm`（z が 600〜700 mm 程度）、`binocular_avg`、`presentation_index`、`presentation_phase` がある
 - [ ] `presentation_index` が 1周目は 0 から一覧の順、測り直しの点はその続きの番号（`first_attempt` / `retry_attempt` にも番号がある）
-- [ ] `calib_compare` の `eye_z_shift_mm` / `eye_y_shift_mm` に値が入る（標準姿勢で頭を動かさなければ数 mm 程度）
-- [ ] `calib_anticipation` の見出しが「提示順: 記録」になる
+      → 10/30 の回は測り直し0点で、測り直しの番号は実機で未確認。`--validate-only --retry-threshold-deg 0`（全点を測り直す）で確認する
+- [x] `calib_compare` の `eye_z_shift_mm` / `eye_y_shift_mm` に値が入る（予想の「数 mm」より大きかった。下の結果）
+- [x] `calib_anticipation` の見出しが「提示順: 記録」になる
+
+> 2026-10-30 の結果（`calib_TEST_20261030_093539`、実験者本人、標準姿勢で較正＋検証1回）：合格。平均 0.64°、precision 0.18°、
+> HUD 最大 1.10°（ammo_weapon）、測り直し0点、`display_angle_deg` 12.0、上のバー −0.01°・下のバー −0.68°、`vertical_scale_pct` 2.9%。
+> 先読みの診断：ずれ 1.5° 超の点は0点（全17点）。
+> 眼の位置：ガイド確定時 z 671.9 / y −43.1 mm に対し、検証点の中央値は **z −19.5 mm（前に出た）**、y −4.6 mm。点の間の幅は z 24.7 mm、y 9.9 mm。
+> 解釈：実験者でも、ガイドの確定から検証までの間に約 2 cm 前に出ている（それでも合格）。「数 mm 程度」という事前の予想は外れた。
+> そのため、協力者の手順 C で「頭が動いた」と判断する基準は絶対値ではなく、実験者の同じ値（この回は z −19.5 mm）との比較で見る。
+> 実際の前傾か、注視方向による眼の位置の推定の変化かは未確認（点ごとの z を提示順と目標の y に対して見る）。弱点：実験者1回のみ
 - [ ] 確認できたら凍結（10/31）。以後の計測側の変更は不具合修正のみ
 
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
