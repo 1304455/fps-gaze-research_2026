@@ -21,6 +21,9 @@
   eye_z_shift_mm / eye_y_shift_mm   検証点ごとの眼の位置（calibrate_validate 1.4.0 の eye_xyz_mm）の中央値 −
                           頭部位置ガイド確定時の位置。正の z = 遠ざかった、負 = 前に出た。正の y = 上へ（UCS）
   eye_z_range_mm / eye_y_range_mm   検証点の間での眼の位置の幅（最大 − 最小）。1.3.0 以前の JSON では空
+  passed_current_criteria / mean_accuracy_binocular_deg   1.9.0 の合否の基準（両眼平均の視線、credits を除く）で
+                          calib JSON から計算し直した合否と全点平均。1.4.0 より前の JSON（両眼平均の視線が無い）では空。
+                          passed は JSON に記録された合否（1.8.0 以前は旧基準）、criteria_version はその基準の版
   calib_min_used_rate / calib_min_used_point   較正点ごと・眼ごとに、SDK が較正に使ったサンプルの割合の最小値と、
                           その点（calib_<x>_<y>_<eye>）。低い点は較正中にその点を見ていなかった可能性。1.5.0 以前の JSON では空
 ずれは左右眼の bias_*_norm の平均（片眼のみなら片眼）。度への換算は atan(ずれ[mm] / 眼−トラッカー距離)。
@@ -50,6 +53,14 @@ if str(_AOI_DIR) not in sys.path:
 
 from aoi_geometry import display_tilt_in_ucs_deg, eye_mean  # noqa: E402
 
+_GAZE_DIR = Path(__file__).resolve().parent.parent / "gaze_estimation"
+if str(_GAZE_DIR) not in sys.path:
+    sys.path.insert(0, str(_GAZE_DIR))
+
+from calibrate_validate import (  # noqa: E402
+    CRITERIA_VERSION, DEFAULT_MAX_HUD_ACCURACY_DEG, DEFAULT_MAX_MEAN_ACCURACY_DEG, judge_binocular,
+)
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_OUT = _PROJECT_ROOT / "data" / "processed" / "calib_compare" / "calib_compare.csv"
 DEFAULT_DISTANCE_MM = 650.0
@@ -58,7 +69,7 @@ BOTTOM_BAR_MIN_Y = 0.8
 
 PRINT_COLUMNS = [
     "file", "calib_margin", "display_angle_deg", "display_width_mm", "mean_accuracy_deg",
-    "hud_max_accuracy_deg", "passed", "vertical_scale_pct", "horizontal_scale_pct",
+    "hud_max_accuracy_deg", "passed", "passed_current_criteria", "vertical_scale_pct", "horizontal_scale_pct",
     "top_bar_bias_y_deg", "bottom_bar_bias_y_deg", "left_mean_accuracy_deg", "right_mean_accuracy_deg",
     "n_retried", "head_z_mm", "eye_z_shift_mm", "eye_y_shift_mm",
 ]
@@ -131,6 +142,16 @@ def eye_drift(points: list[dict], head: dict) -> dict:
     return out
 
 
+def current_criteria(points: list[dict], calibration: dict) -> dict:
+    """1.9.0 の合否の基準で計算し直した合否と全点平均。両眼平均の視線が無い JSON（1.4.0 より前）は None。"""
+    if not points or any("binocular_avg" not in p for p in points):
+        return {"passed_current_criteria": None, "mean_accuracy_binocular_deg": None}
+    validate_only = str((calibration or {}).get("status") or "").startswith("not_performed")
+    ok = None if validate_only else (calibration or {}).get("succeeded")
+    v = judge_binocular(points, DEFAULT_MAX_MEAN_ACCURACY_DEG, DEFAULT_MAX_HUD_ACCURACY_DEG, calibration_ok=ok)
+    return {"passed_current_criteria": v["passed"], "mean_accuracy_binocular_deg": v["mean_accuracy_binocular_deg"]}
+
+
 def calib_point_usage(calibration: dict) -> dict:
     """
     SDK の較正結果（calibrate_validate 1.6.0 の points_used_by_sdk）で、較正に使ったサンプルの割合が
@@ -200,6 +221,8 @@ def summarize_calib(calib: dict, name: str = "") -> dict:
         "bottom_bar_bias_y_deg": bias_norm_to_deg(float(np.nanmean(bottom)), h_mm, dist) if bottom else float("nan"),
         **eye_drift(pts, head),
         **calib_point_usage(calibration),
+        **current_criteria(pts, calibration),
+        "criteria_version": summ.get("criteria_version"),
     }
     for eye in ("left", "right"):
         accs = [(p.get(eye) or {}).get("accuracy_deg") for p in pts]

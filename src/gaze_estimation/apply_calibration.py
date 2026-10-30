@@ -10,7 +10,7 @@ calibrate_validate.py（1.8.0 以降）は較正に成功した回の較正デ�
   候補：SDK の較正が成功し（calibration.succeeded）、較正データのファイルがある calib JSON
   1. 合格した回を優先
   2. HUD の点の不合格（summary.hud_points_failed）の数が少ない回
-  3. 全点平均 accuracy（summary.mean_accuracy_deg）が小さい回
+  3. 全点平均 accuracy が小さい回（1.9.0 以降は両眼平均の視線 summary.mean_accuracy_binocular_deg、それより前は mean_accuracy_deg）
   4. それでも同じなら新しい回（試合に近い時刻の較正）
 
 入れ直した後に装置から較正データを取り出し、SHA-256 がファイルと一致することを確かめる。
@@ -37,7 +37,7 @@ from pathlib import Path
 SCRIPT_VERSION = "1.0.0"
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
-SELECTION_RULE = ("合格した回を優先 → HUD の点の不合格の数が少ない → 全点平均 accuracy が小さい → 新しい回"
+SELECTION_RULE = ("合格した回を優先 → HUD の点の不合格の数が少ない → 全点平均 accuracy（1.9.0 以降は両眼平均の視線）が小さい → 新しい回"
                   "（SDK の較正が成功し、較正データのファイルがある回だけが候補）")
 
 
@@ -60,7 +60,8 @@ def load_candidate(path: Path) -> dict:
         reason = "較正データのファイルが無い（calibrate_validate 1.8.0 より前、または取り出しに失敗）"
     elif not (path.parent / data_file).exists():
         reason = f"較正データのファイルが見つからない: {data_file}"
-    mean = summ.get("mean_accuracy_deg")
+    # 合否の基準（calibrate_validate 1.9.0 以降は両眼平均の視線）にそろえた全点平均
+    mean = summ.get("mean_accuracy_binocular_deg", summ.get("mean_accuracy_deg"))
     return {
         "calib_json": path.name,
         "path": path,

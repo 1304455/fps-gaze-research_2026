@@ -20,8 +20,9 @@ Tobii Pro SDK によるキャリブレーション＋検証ツール（IMPROVEME
   （眼−画面距離の近似を使わない）。
 - 結果を data/raw/calib_<subject>_<YYYYMMDD_HHMMSS>.json に保存
 
-合否閾値（--max-mean-accuracy-deg / --max-hud-accuracy-deg）の既定値 1.0° / 1.5° は
-計画段階の案で、ユーザーとの合意で確定する。
+合否（1.9.0、2026-10-30 決定、CRITERIA_VERSION）：両眼平均の視線（binocular_avg、解析の center_x と同じ作り方）で、
+全点平均 ≤ 1.0° かつ HUD の各点（credits を除く）≤ 1.5°。測り直しの判定も両眼平均の視線。
+1.8.0 までの判定（左右眼の誤差の平均、credits を含む）は judge() として残し、summary.passed_legacy に記録する。
 
 使い方（PowerShell）
 --------------------
@@ -64,10 +65,16 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
 
 from aoi_geometry import aoi_center  # noqa: E402
 
-SCRIPT_VERSION = "1.8.0"
+SCRIPT_VERSION = "1.9.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
+DEFAULT_MAX_MEAN_ACCURACY_DEG = 1.0
+DEFAULT_MAX_HUD_ACCURACY_DEG = 1.5
+CRITERIA_VERSION = "v2-binocular-no-credits-20261030"
+CRITERIA_EXCLUDED_HUD = ("aoi_credits",)
+CRITERIA_TEXT = ("両眼平均の視線（binocular_avg）の accuracy で、全点平均 ≤ 閾値 かつ HUD の各点（credits を除く）≤ 閾値、"
+                 "かつ SDK の較正が失敗していない。credits は探索指標（2026-10-21）のため判定から外す")
 WARMUP_TARGET = {"label": "warmup_center", "kind": "warmup", "x": 0.5, "y": 0.5}
 GRID_VALIDATION_POINTS = [(0.1, 0.1), (0.5, 0.1), (0.9, 0.1), (0.1, 0.5), (0.5, 0.5),
                           (0.9, 0.5), (0.1, 0.9), (0.5, 0.9), (0.9, 0.9)]
@@ -128,9 +135,19 @@ def parse_display_index(text: str, n_monitors: int) -> int:
     return idx - 1
 
 
-def points_to_retry(points: list[dict], threshold_deg: float) -> list[int]:
-    """再試行する検証点の index（データなし、または accuracy が閾値超）。"""
-    return [i for i, p in enumerate(points) if p.get("accuracy_deg") is None or p["accuracy_deg"] > threshold_deg]
+def binocular_accuracy(point: dict) -> "float | None":
+    """検証点の両眼平均の視線の accuracy（1.4.0 以降の JSON にある。無ければ None）。"""
+    return (point.get("binocular_avg") or {}).get("accuracy_deg")
+
+
+def points_to_retry(points: list[dict], threshold_deg: float, basis: str = "per_eye") -> list[int]:
+    """
+    再試行する検証点の index（データなし、または accuracy が閾値超）。
+    basis="binocular" は両眼平均の視線の accuracy で判定する（1.9.0 の測り直し）。"per_eye" は左右眼の誤差の平均（1.8.0 まで）。
+    """
+    def acc(p):
+        return binocular_accuracy(p) if basis == "binocular" else p.get("accuracy_deg")
+    return [i for i, p in enumerate(points) if acc(p) is None or acc(p) > threshold_deg]
 
 
 def _compact(attempt: dict) -> dict:
@@ -291,6 +308,46 @@ def validation_targets(aois: "list[dict] | None", min_separation: float = 0.03) 
             continue
         targets.append({"label": f"aoi_{aoi['name']}", "kind": "aoi", "aoi": aoi["name"], "x": cx, "y": cy})
     return targets
+
+
+def judge_binocular(points: list[dict], max_mean_acc: float, max_hud_acc: float,
+                    calibration_ok: "bool | None" = None,
+                    excluded_hud: "tuple[str, ...]" = CRITERIA_EXCLUDED_HUD) -> dict:
+    """
+    1.9.0 の合否（CRITERIA_VERSION）：両眼平均の視線の accuracy で、全点平均と HUD の各点（excluded_hud を除く）を判定する。
+    両眼平均の視線が無い点（両眼とも無効、または 1.4.0 より前の JSON）は points_without_data に入れ、HUD の点なら不合格にする。
+    """
+    accs = [binocular_accuracy(p) for p in points]
+    valid = [a for a in accs if a is not None]
+    mean_acc = float(np.mean(valid)) if valid else None
+    hud = [p for p in points if p.get("kind") == "aoi" and p.get("label") not in excluded_hud]
+    hud_fail = [p["label"] for p in hud if binocular_accuracy(p) is None or binocular_accuracy(p) > max_hud_acc]
+    missing = [p["label"] for p in points if binocular_accuracy(p) is None]
+    passed = mean_acc is not None and mean_acc <= max_mean_acc and not hud_fail and calibration_ok is not False
+    return {
+        "criteria_version": CRITERIA_VERSION,
+        "criteria": CRITERIA_TEXT,
+        "mean_accuracy_binocular_deg": mean_acc,
+        "hud_points_failed": hud_fail,
+        "hud_points_excluded_from_criteria": list(excluded_hud),
+        "points_without_binocular_data": missing,
+        "threshold_mean_accuracy_deg": max_mean_acc,
+        "threshold_hud_accuracy_deg": max_hud_acc,
+        "calibration_ok": calibration_ok,
+        "passed": bool(passed),
+    }
+
+
+def summarize_verdict(points: list[dict], max_mean_acc: float, max_hud_acc: float,
+                      calibration_ok: "bool | None" = None) -> dict:
+    """
+    calib JSON の summary。passed / hud_points_failed は 1.9.0 の判定（judge_binocular）。
+    1.8.0 までの判定（judge）は passed_legacy / hud_points_failed_legacy に残す。mean_accuracy_deg は従来どおり左右眼の誤差の平均。
+    """
+    legacy = judge(points, max_mean_acc, max_hud_acc, calibration_ok=calibration_ok)
+    current = judge_binocular(points, max_mean_acc, max_hud_acc, calibration_ok=calibration_ok)
+    return {**legacy, "passed_legacy": legacy["passed"], "hud_points_failed_legacy": legacy["hud_points_failed"],
+            **current}
 
 
 def judge(points: list[dict], max_mean_acc: float, max_hud_acc: float,
@@ -542,7 +599,7 @@ def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], di
         for i in validation_order(len(targets), rng):
             results[i] = measure(targets[i], "first")
         if retry_threshold_deg is not None:
-            idx = points_to_retry(results, retry_threshold_deg)
+            idx = points_to_retry(results, retry_threshold_deg, basis="binocular")
             if rng is not None:
                 rng.shuffle(idx)
             if idx:
@@ -629,8 +686,10 @@ def main(argv=None):
     p.add_argument("--shrink-sec", type=float, default=1.0, help="目標点の外円が縮む時間（秒）")
     p.add_argument("--settle-ms", type=float, default=800.0, help="検証：目標提示から集計開始までの待ち（ms）")
     p.add_argument("--window-ms", type=float, default=500.0, help="検証：集計に使う区間の長さ（ms）")
-    p.add_argument("--max-mean-accuracy-deg", type=float, default=1.0, help="合格条件：全点平均 accuracy（案。要合意）")
-    p.add_argument("--max-hud-accuracy-deg", type=float, default=1.5, help="合格条件：AOI中心の各点 accuracy（案。要合意）")
+    p.add_argument("--max-mean-accuracy-deg", type=float, default=DEFAULT_MAX_MEAN_ACCURACY_DEG,
+                   help="合格条件：両眼平均の視線の全点平均 accuracy（2026-10-30 決定 1.0）")
+    p.add_argument("--max-hud-accuracy-deg", type=float, default=DEFAULT_MAX_HUD_ACCURACY_DEG,
+                   help="合格条件：両眼平均の視線の HUD 各点 accuracy（credits を除く。2026-10-30 決定 1.5）")
     p.add_argument("--calib-margin", type=float, default=DEFAULT_CALIB_MARGIN,
                    help="キャリブレーション点の画面端からの距離（正規化。既定 0.1。HUD の上下端を較正範囲に入れるなら 0.05）")
     p.add_argument("--retry-threshold-deg", type=float, default=None,
@@ -765,8 +824,8 @@ def main(argv=None):
     active_calibration = calibration_data_record(active_data, active_error, calib_data_file)
     if active_error:
         print(f"⚠ 較正データを取り出せませんでした（較正・検証の結果は保存します）: {active_error}")
-    verdict = judge(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg,
-                    calibration_ok=None if calibration is None else calibration["succeeded"])
+    verdict = summarize_verdict(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg,
+                                calibration_ok=None if calibration is None else calibration["succeeded"])
     verdict["retried_points"] = [p["label"] for p in points if p.get("retried")]
     out = args.output_dir / f"calib_{args.subject}_{stamp}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -791,8 +850,9 @@ def main(argv=None):
             "accuracy_deg": "眼位置(gaze_origin)から注視点(gaze_point, UCS)へのベクトルと、目標点へのベクトルの角度差の平均",
             "precision_rms_s2s_deg": "連続サンプルの視線ベクトル間の角度差の二乗平均平方根",
             "binocular": "左右眼の値の平均（片眼のみ有効ならその眼の値）",
-            "passed": "全点平均 accuracy と AOI中心の各点の accuracy が閾値以内、かつ SDK の較正が失敗していない"
-                      "（calibration_ok=False なら不合格。None は較正なし＝--validate-only）",
+            "passed": "1.9.0 から summary.criteria_version の基準（両眼平均の視線で全点平均と HUD 各点〔credits を除く〕が閾値以内）"
+                      "かつ SDK の較正が失敗していない（calibration_ok=False なら不合格。None は較正なし＝--validate-only）。"
+                      "1.8.0 までの基準（左右眼の誤差の平均、credits を含む）の合否は passed_legacy。mean_accuracy_deg は左右眼の誤差の平均のまま",
             "valid_rate": "検証区間のサンプルのうち、その眼の gaze_point と gaze_origin が有効な割合（0件なら 0.0）",
             "bias_norm": "正規化座標上の平均ずれ（注視点平均 − 目標）。正の y は下方向",
             "binocular_avg": "左右眼の視線を平均してから求めた accuracy / precision / bias（解析の center_x/center_y と同じ作り方。"
@@ -814,7 +874,7 @@ def main(argv=None):
             "presentation_order": "1.5.0 から、較正点は中央を最初に固定して残り8点を、検証点は1周目・測り直しとも全点を、"
                                   "乱数シード seed でランダムな順に提示する（randomized=false は --fixed-order＝1.4.0 以前の固定の順番）。"
                                   "parameters.calibration_points は実際の提示順。validation_points は提示順にかかわらず一覧の順に並べる",
-            "retried": "1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、データ品質（両眼の有効率の低い方 → precision）"
+            "retried": "1.9.0 から測り直しの判定は両眼平均の視線の accuracy。1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、データ品質（両眼の有効率の低い方 → precision）"
                        "が良い方を採用（accuracy は採否に使わない）。両方を first_attempt / retry_attempt に残す",
         },
         "calibration": calibration if calibration else {"status": "not_performed (--validate-only)"},
@@ -825,10 +885,12 @@ def main(argv=None):
     }
     with open(out, "w", encoding="utf-8") as f:
         json.dump(record, f, ensure_ascii=False, indent=2)
-    print(f"\n全体平均 accuracy: {verdict['mean_accuracy_deg']}  precision: {verdict['mean_precision_rms_s2s_deg']}")
+    mean_bin = verdict["mean_accuracy_binocular_deg"]
+    print(f"\n全体平均 accuracy（両眼平均の視線）: {'—' if mean_bin is None else f'{mean_bin:.2f}°'}"
+          f"  （左右眼の誤差の平均: {verdict['mean_accuracy_deg']}）  precision: {verdict['mean_precision_rms_s2s_deg']}")
     if verdict["calibration_ok"] is False:
         print("判定: 不合格（キャリブレーションの失敗。精度の値は前回の較正によるもの）")
-    print(f"判定: {'合格' if verdict['passed'] else '不合格'}  HUD点の不合格: {verdict['hud_points_failed']}"
+    print(f"判定（{verdict['criteria_version']}）: {'合格' if verdict['passed'] else '不合格'}  HUD点の不合格: {verdict['hud_points_failed']}"
           f"  測り直した点: {verdict['retried_points']}")
     print(f"保存しました: {out}")
 

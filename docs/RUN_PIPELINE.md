@@ -4,7 +4,7 @@
 研究室PC（Windows + PowerShell）で、**同じ PowerShell ウィンドウで上から順に**実行する前提。
 途中で作る変数（`$csv` など）を後の手順で使うので、ウィンドウを閉じたら手順3からやり直す。
 
-対応するバージョン：calibrate_validate 1.8.0 / apply_calibration 1.0.0 / v5 5.1.1 / aoi_analysis-ver3 3.2.0。
+対応するバージョン：calibrate_validate 1.9.0 / apply_calibration 1.0.0 / v5 5.1.1 / aoi_analysis-ver3 3.2.0。
 ETM の画面設定などの決定事項は CLAUDE.md §2、実機での検証結果は LAB_CHECKLIST.md を参照。
 
 ---
@@ -35,7 +35,7 @@ python .\src\gaze_estimation\calibrate_validate.py --subject $subj --calib-margi
 $calib = (Get-ChildItem .\data\raw\calib_${subj}_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
 python .\src\analysis\calib_compare.py $calib --group-by none
 ```
-- [ ] `passed` が True
+- [ ] `passed` が True（1.9.0 の基準：両眼平均の視線で全点平均 ≤ 1.0°、HUD 各点〔credits を除く〕≤ 1.5°）
 - [ ] **`display_angle_deg` が 12.0**
 - 不合格なら休憩してから手順1をやり直す（**最大3回**。2026-10-30 決定）
 - 合格した回があれば、その回の較正が装置に残っている（合格したらそこで止める）→ 手順2へ

@@ -453,6 +453,21 @@ python .\src\gaze_estimation\apply_calibration.py (Get-ChildItem .\data\raw\cali
 - [ ] `--dry-run` で2回のうち規則どおりの回が選ばれる
 - [ ] 確認できたら凍結し、main への PR を作る
 
+#### 2026-10-30：calibrate_validate 1.9.0（合否の基準を両眼平均の視線・credits 除外に。1.8.0 の確認と同じ日に）
+
+決定（CLAUDE.md §2 除外基準）：両眼平均の視線で全点平均 ≤ 1.0° かつ HUD 各点（credits を除く）≤ 1.5°。測り直しの判定も両眼平均の視線。
+`summary.passed` は新基準、`summary.passed_legacy` は旧基準、`summary.criteria_version` に基準の版。
+`calib_compare` の `passed_current_criteria` は 1.4.0 以降の JSON から新基準の合否を計算し直す。集計（qc_report）に `calibration_criteria_version` を追加。
+
+1.8.0 の確認（上の節）で作った `calib_TESTAPPLY_*.json` をそのまま使う（1.9.0 に `git pull` してから上の節を実行すれば両方を一度に確認できる）：
+```powershell
+python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_TESTAPPLY_*.json).FullName --group-by none
+```
+- [ ] 画面の最後に「判定（v2-binocular-no-credits-20261030）: 合格／不合格」と、両眼平均の視線の全体平均が出る
+- [ ] JSON の `summary` に `passed`・`passed_legacy`・`criteria_version`・`mean_accuracy_binocular_deg` がある
+- [ ] `calib_compare` の `passed` と `passed_current_criteria` が一致する（1.9.0 の回）
+- [ ] 確認できたら凍結し、main への PR を作る
+
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
 > 2026-10-13 実施（過去の試合映像を視聴）：60.1 Hz、欠測率 0.7%、start_sync（confirmed）23 ms（既知 18.8±2.5 ms の範囲内）。

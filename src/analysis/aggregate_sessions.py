@@ -247,12 +247,15 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
     eye = dq.get("eye_distance_from_tracker", {}) or {}
     used = qc.get("eye_screen_distance_used", {}) or {}
     res = qc.get("resolution_check", {}) or {}
-    calib_passed = calib_acc = None
+    calib_passed = calib_acc = calib_criteria = calib_acc_bin = None
     calib_file = _resolve((manifest_row or {}).get("calibration_file"))
     if calib_file and calib_file.exists():
         with open(calib_file, "r", encoding="utf-8") as f:
             summ = json.load(f).get("summary", {})
         calib_passed, calib_acc = summ.get("passed"), summ.get("mean_accuracy_deg")
+        # 合否の基準の版（calibrate_validate 1.9.0 以降。無ければ旧基準＝左右眼の誤差の平均、credits を含む）
+        calib_criteria = summ.get("criteria_version") or "legacy-per-eye"
+        calib_acc_bin = summ.get("mean_accuracy_binocular_deg")
     measured_cm = (manifest_row or {}).get("eye_screen_distance_cm")
 
     row = {
@@ -279,6 +282,8 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
         "eye_screen_distance_measured_mm": float(measured_cm) * 10 if measured_cm else None,
         "calibration_passed": calib_passed,
         "calibration_mean_accuracy_deg": calib_acc,
+        "calibration_criteria_version": calib_criteria,
+        "calibration_mean_accuracy_binocular_deg": calib_acc_bin,
         "resolution_ok": res.get("ok"),
         "pc_vs_system_interval_sd_ms": (dq.get("time_base_comparison") or {}).get("interval_difference_sd_ms"),
         "script_version": (qc.get("script") or {}).get("version"),
