@@ -292,7 +292,7 @@ python .\src\gaze_estimation\calibrate_validate.py --subject TEST --validate-onl
 >       合否と、誤差 1.5° 超かつ precision 0.8 超の点の数、ずれと次の点の向きの一致を見る
 > - [ ] B.（A でも先読みが残る場合）`--settle-ms 200` だけ変える。採用するなら検証手順の変更なので、全員・実験者の基準を同じ値にそろえる（要相談）
 > - [ ] C. 較正の直後に `--validate-only` をもう1回。2回の検証で上段のずれが変われば検証のときの問題（頭・注視）、同じなら較正の問題
-> - [ ] `calib_PL01_20261029_155725.json`（実験者）を `data\raw\_excluded\` に移し、理由を同じフォルダの README.txt に書く（10/29 決定。中身は変えず、ワイルドカードや `Select-Object -Last 1` に拾われないようにする）
+> - [x] `calib_PL01_20261029_155725.json`（実験者）を `data\raw\_excluded\` に移し、理由を同じフォルダの README.txt に書く（10/30 移動済み）（10/29 決定。中身は変えず、ワイルドカードや `Select-Object -Last 1` に拾われないようにする）
 > - 先読みの判定はリポジトリの `src\analysis\calib_anticipation.py` で行う（10/30。一時スクリプトと同じ判定。1.4.0 の JSON では記録した提示順を使う）。
 >   C の判定は `calib_compare.py` の `eye_z_shift_mm` / `eye_y_shift_mm`（検証中の眼の位置 − ガイド確定時）も見る
 
@@ -418,11 +418,11 @@ $calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime
 python -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); w=d['validation_warmup']; print(d['script']['version'], d['parameters']['warmup'], w['label'], round(w['accuracy_deg'],2)); f=[p for p in d['validation_points'] if (p.get('first_attempt') or p)['presentation_index']==0][0]; print('最初の点', f['label'], round((f.get('first_attempt') or f)['accuracy_deg'],2), '合否', d['summary']['passed'])" $calib
 python .\src\analysis\calib_compare.py $calib --group-by none
 ```
-- [ ] `python -m pytest` が全件 passed
-- [ ] 検証の開始直後に中央の点が1回出てから、ランダムな順番の点が始まる（目視）
-- [ ] `script.version` が `1.7.0`、`validation_warmup` に中央の点の結果があり、`validation_points` は 17 点のまま
-- [ ] `calib_compare` が今までどおり動く（練習用の点は集計に入らない）
-- [ ] 確認できたら凍結し、main への PR を作る
+- [x] `python -m pytest` が全件 passed
+- [x] 検証の開始直後に中央の点が1回出てから、ランダムな順番の点が始まる（目視）
+- [x] `script.version` が `1.7.0`、`validation_warmup` に中央の点の結果があり、`validation_points` は 17 点のまま
+- [x] `calib_compare` が今までどおり動く（練習用の点は集計に入らない）
+- [ ] 確認できたら凍結し、main への PR を作る（10/30 研究室PCで上の項目を確認済み。凍結・PR は未）
 - [ ] 効果の確認（凍結後でよい）：1.7.0 の回を重ね、最初の点（presentation_index 0）の1回目の誤差がその回の他の点より悪い傾向が消えたかを見る（10/30 の4回：悪い方から 1・4・7・3 位）
 
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
