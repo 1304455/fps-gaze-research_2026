@@ -353,6 +353,31 @@ python .\src\analysis\calib_compare.py $calib --group-by none
 - [ ] 実験者の結果（平均 accuracy、HUD 最大）が 10/30 の 1.4.0 の回（0.64°、1.10°）と大きく違わない（順番を変えても実験者の精度は変わらないはず）
 - [ ] 確認できたら凍結。PL01 の手順 A・C は 1.5.0 で行う（順番のランダム化と説明の両方が入った状態での確認になる）
 
+#### 2026-10-30：calibrate_validate 1.6.0（F2、SDK の較正結果の記録の追加のみ。凍結前に研究室PCで確認）
+
+`calibration.points_used_by_sdk` の各点に、眼ごとのサンプル数（`n_used`：較正に使った／`n_valid_not_used`：有効だが使わなかった
+＝SDK の説明では「視線が点から遠すぎた」など／`n_invalid`：無効）、`used_rate`、使った・使わなかったサンプルの平均のずれ
+（`*_offset_*_norm`）を追加した（既存の `x`・`y` は残す）。属性名は tobii-research 2.1.0 のソースで確認
+（公式サイトはこの環境から開けなかった）。読み取りに失敗しても較正は止めず `calibration.points_detail_error` に記録する。
+ずれは補正を作ったデータに当てた値なので精度の指標ではなく、どの較正点がおかしかったかを見るためのもの。
+`calib_compare` に `calib_min_used_rate` / `calib_min_used_point`（使ったサンプルの割合が最も低い較正点と眼）を追加。
+
+```powershell
+git pull
+python -m pytest
+pip show tobii-research
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python -c "import json,sys; c=json.load(open(sys.argv[1],encoding='utf-8'))['calibration']; print('error:', c.get('points_detail_error')); [print(p['x'], p['y'], p.get('n_samples'), *[p.get(f'{e}_{k}') for e in ('left','right') for k in ('n_used','n_valid_not_used','n_invalid','n_unknown_validity')]) for p in c['points_used_by_sdk']]" $calib
+python .\src\analysis\calib_compare.py $calib --group-by none
+```
+- [ ] `python -m pytest` が全件 passed、`pip show tobii-research` の版を控える（2.x なら属性名は同じはず）
+- [ ] `script.version` が `1.6.0`、`points_detail_error` が `None`
+- [ ] 較正点 9 点それぞれに `n_samples` と眼ごとの数がある。`n_unknown_validity` が 0（0 でなければ SDK の版で validity の値が違う → Claude に伝える）
+- [ ] 実験者の標準姿勢なら、ほとんどの点で `n_used` が `n_samples` に近い
+- [ ] `calib_compare` の `calib_min_used_rate` / `calib_min_used_point` に値が入る
+- [ ] 確認できたら凍結。PL01 の手順 A・C は 1.6.0 で行う
+
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
 > 2026-10-13 実施（過去の試合映像を視聴）：60.1 Hz、欠測率 0.7%、start_sync（confirmed）23 ms（既知 18.8±2.5 ms の範囲内）。

@@ -63,7 +63,7 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
 
 from aoi_geometry import aoi_center  # noqa: E402
 
-SCRIPT_VERSION = "1.5.0"
+SCRIPT_VERSION = "1.6.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
@@ -420,6 +420,65 @@ def display_area_dict(eyetracker) -> dict:
     }
 
 
+VALIDITY_KEYS = {
+    "validity_valid_and_used": "n_used",
+    "validity_valid_but_not_used": "n_valid_not_used",
+    "validity_invalid_and_not_used": "n_invalid",
+}
+
+
+def summarize_calibration_point(point) -> dict:
+    """
+    SDK の CalibrationPoint 1つを、眼ごとのサンプル数と補正後のずれにまとめる（1.6.0）。
+    属性名は tobii-research 2.1.0 のソースで確認（CalibrationPoint.position_on_display_area / calibration_samples、
+    CalibrationSample.left_eye / right_eye、CalibrationEyeData.position_on_display_area / validity）。
+    validity は文字列で、使った（valid_and_used）／有効だが使わなかった（valid_but_not_used：SDK の説明では
+    「視線が点から遠すぎた」など）／無効（invalid_and_not_used）。
+    ずれ（offset）はサンプルの位置 − 較正点の位置（正規化座標、正の y は下向き）。補正を作ったデータに補正を
+    当てた値なので精度の指標にはならない（どの点の較正がおかしかったかを見るためのもの）。
+    """
+    tx, ty = (float(v) for v in point.position_on_display_area)
+    samples = list(point.calibration_samples or ())
+    out = {"x": tx, "y": ty, "n_samples": len(samples)}
+    for side in ("left", "right"):
+        eyes = [getattr(smp, f"{side}_eye") for smp in samples]
+        groups = {key: [] for key in VALIDITY_KEYS.values()}
+        unknown = 0
+        for e in eyes:
+            key = VALIDITY_KEYS.get(str(e.validity))
+            if key is None:
+                unknown += 1  # SDK の版違いで validity の値が想定と違う場合に、0件と取り違えないよう数を残す
+            else:
+                groups[key].append(e.position_on_display_area)
+        for key, pos in groups.items():
+            out[f"{side}_{key}"] = len(pos)
+        out[f"{side}_n_unknown_validity"] = unknown
+        for key, label in (("n_used", "used"), ("n_valid_not_used", "not_used")):
+            pos = np.asarray(groups[key], dtype=float).reshape(-1, 2)
+            out[f"{side}_{label}_offset_x_norm"] = float(pos[:, 0].mean() - tx) if len(pos) else None
+            out[f"{side}_{label}_offset_y_norm"] = float(pos[:, 1].mean() - ty) if len(pos) else None
+        out[f"{side}_used_rate"] = (len(groups["n_used"]) / len(samples)) if samples else None
+    return out
+
+
+def summarize_calibration_result(result) -> tuple[list[dict], "str | None"]:
+    """
+    CalibrationResult の点ごとの記録と、読み取りに失敗したときのエラー文字列。
+    失敗しても較正そのものは止めず、点の位置（x, y）だけでも残す。両眼の成功以外では SDK が点の一覧を返さない（空）。
+    """
+    raw_points = list(getattr(result, "calibration_points", None) or ())
+    try:
+        return [summarize_calibration_point(p) for p in raw_points], None
+    except Exception as e:  # SDK の版違いなどで属性が無い場合
+        fallback = []
+        for p in raw_points:
+            try:
+                fallback.append({"x": float(p.position_on_display_area[0]), "y": float(p.position_on_display_area[1])})
+            except Exception:
+                pass
+        return fallback, f"{type(e).__name__}: {e}"
+
+
 def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float,
                     points: "list[tuple[float, float]] | None" = None) -> dict:
     calib = tr.ScreenBasedCalibration(eyetracker)
@@ -430,17 +489,19 @@ def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float,
             if not screen.target(x, y, shrink_sec):
                 raise KeyboardInterrupt
             status = calib.collect_data(x, y)
+            first_status = status
             if status != tr.CALIBRATION_STATUS_SUCCESS:
                 status = calib.collect_data(x, y)  # SDK サンプルどおり1回だけ再試行
-            point_status.append({"x": x, "y": y, "collect_status": str(status)})
+            point_status.append({"x": x, "y": y, "collect_status": str(status),
+                                 "first_collect_status": str(first_status)})
         result = calib.compute_and_apply()
     finally:
         calib.leave_calibration_mode()
-    used = []
-    for p in getattr(result, "calibration_points", []) or []:
-        used.append({"x": p.position_on_display_area[0], "y": p.position_on_display_area[1]})
+    used, detail_error = summarize_calibration_result(result)
+    if detail_error:
+        print(f"⚠ 較正点の詳細（眼ごとのサンプル数）を読み取れませんでした: {detail_error}")
     return {"status": str(result.status), "succeeded": result.status == tr.CALIBRATION_STATUS_SUCCESS,
-            "points": point_status, "points_used_by_sdk": used}
+            "points": point_status, "points_used_by_sdk": used, "points_detail_error": detail_error}
 
 
 def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], display_area: dict,
@@ -674,6 +735,10 @@ def main(argv=None):
             "eye_xyz_mm": "検証区間内の眼の位置（UCS, mm。両眼の中点の平均、片眼のみならその眼）。head_position.recorded と同じ定義（1.4.0 で追加）",
             "presentation_index": "検証の測定の提示の通し番号（0 始まり、測り直しを含む）。presentation_phase は first / retry。"
                                   "first_attempt / retry_attempt にもそれぞれの値を残す（1.4.0 で追加）",
+            "points_used_by_sdk": "SDK の較正結果の点ごとの記録。1.6.0 から眼ごとのサンプル数（n_used：較正に使った、"
+                                  "n_valid_not_used：有効だが使わなかった＝視線が点から遠すぎた等、n_invalid：無効）、used_rate、"
+                                  "使ったサンプル・使わなかったサンプルの平均のずれ（*_offset_*_norm、サンプル − 較正点、正の y は下向き）。"
+                                  "ずれは補正を作ったデータに当てた値で精度の指標ではない。両眼の成功以外では空",
             "presentation_order": "1.5.0 から、較正点は中央を最初に固定して残り8点を、検証点は1周目・測り直しとも全点を、"
                                   "乱数シード seed でランダムな順に提示する（randomized=false は --fixed-order＝1.4.0 以前の固定の順番）。"
                                   "parameters.calibration_points は実際の提示順。validation_points は提示順にかかわらず一覧の順に並べる",

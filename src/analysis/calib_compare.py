@@ -21,6 +21,8 @@
   eye_z_shift_mm / eye_y_shift_mm   検証点ごとの眼の位置（calibrate_validate 1.4.0 の eye_xyz_mm）の中央値 −
                           頭部位置ガイド確定時の位置。正の z = 遠ざかった、負 = 前に出た。正の y = 上へ（UCS）
   eye_z_range_mm / eye_y_range_mm   検証点の間での眼の位置の幅（最大 − 最小）。1.3.0 以前の JSON では空
+  calib_min_used_rate / calib_min_used_point   較正点ごと・眼ごとに、SDK が較正に使ったサンプルの割合の最小値と、
+                          その点（calib_<x>_<y>_<eye>）。低い点は較正中にその点を見ていなかった可能性。1.5.0 以前の JSON では空
 ずれは左右眼の bias_*_norm の平均（片眼のみなら片眼）。度への換算は atan(ずれ[mm] / 眼−トラッカー距離)。
 
 使い方（PowerShell。ワイルドカードはスクリプト側で展開する）
@@ -129,6 +131,22 @@ def eye_drift(points: list[dict], head: dict) -> dict:
     return out
 
 
+def calib_point_usage(calibration: dict) -> dict:
+    """
+    SDK の較正結果（calibrate_validate 1.6.0 の points_used_by_sdk）で、較正に使ったサンプルの割合が
+    最も低い較正点と眼。記録が無い（1.5.0 以前、--validate-only、両眼の成功以外）ときは NaN / None。
+    """
+    worst = None
+    for p in (calibration or {}).get("points_used_by_sdk") or []:
+        for eye in ("left", "right"):
+            rate = p.get(f"{eye}_used_rate")
+            if rate is not None and (worst is None or rate < worst[0]):
+                worst = (rate, f"calib_{p['x']:.2f}_{p['y']:.2f}_{eye}")
+    if worst is None:
+        return {"calib_min_used_rate": float("nan"), "calib_min_used_point": None}
+    return {"calib_min_used_rate": worst[0], "calib_min_used_point": worst[1]}
+
+
 def summarize_calib(calib: dict, name: str = "") -> dict:
     """calib JSON 1つを1行の要約にする。"""
     geo = display_geometry(calib)
@@ -181,6 +199,7 @@ def summarize_calib(calib: dict, name: str = "") -> dict:
         "top_bar_bias_y_deg": bias_norm_to_deg(float(np.nanmean(top)), h_mm, dist) if top else float("nan"),
         "bottom_bar_bias_y_deg": bias_norm_to_deg(float(np.nanmean(bottom)), h_mm, dist) if bottom else float("nan"),
         **eye_drift(pts, head),
+        **calib_point_usage(calibration),
     }
     for eye in ("left", "right"):
         accs = [(p.get(eye) or {}).get("accuracy_deg") for p in pts]
