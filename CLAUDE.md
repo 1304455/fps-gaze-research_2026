@@ -54,7 +54,7 @@
 1セッションを通すコマンドの手順は `docs/RUN_PIPELINE.md`（研究室PC用、PowerShell）。
 
 ```
-[較正] src/gaze_estimation/calibrate_validate.py  (1.3.0) 試合前に9点キャリブレーション＋検証 → data/raw/calib_<subject>_<日時>.json（SDK 較正の失敗は不合格）
+[較正] src/gaze_estimation/calibrate_validate.py  (1.4.0) 試合前に9点キャリブレーション＋検証 → data/raw/calib_<subject>_<日時>.json（SDK 較正の失敗は不合格。1.4.0 で検証点ごとの眼の位置・両眼平均の視線の精度・提示順を記録）
 [計測] src/gaze_estimation/tobii_capture_with_sync_flash_v5.py   (SCRIPT_VERSION 5.1.1-eye-origin-pupil。v4.1 に眼位置z・瞳孔の列を末尾追加。5.0.1 でログからパスワード・token を除去。5.1.0 で眼位置 x/y を末尾追加。5.1.1 で meta に解析の時刻列を記録)
          + src/obs_controller_v2.py  (obsws-python / OBS WebSocket v5 で録画を自動開始・停止)
          → data/raw/gaze_<subject>_<trial>_<condition>_<YYYYMMDD_HHMMSS>.csv / _meta.json / ログ

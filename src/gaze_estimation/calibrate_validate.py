@@ -59,7 +59,7 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
 
 from aoi_geometry import aoi_center  # noqa: E402
 
-SCRIPT_VERSION = "1.3.0"
+SCRIPT_VERSION = "1.4.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
@@ -107,7 +107,9 @@ def points_to_retry(points: list[dict], threshold_deg: float) -> list[int]:
 
 
 def _compact(attempt: dict) -> dict:
-    keep = {k: attempt.get(k) for k in ("accuracy_deg", "precision_rms_s2s_deg", "n_samples_window")}
+    keep = {k: attempt.get(k) for k in ("accuracy_deg", "precision_rms_s2s_deg", "n_samples_window",
+                                        "presentation_index", "presentation_phase", "eye_xyz_mm")}
+    keep["binocular_avg_accuracy_deg"] = (attempt.get("binocular_avg") or {}).get("accuracy_deg")
     for e in ("left", "right"):
         if isinstance(attempt.get(e), dict):
             for k in ("accuracy_deg", "valid_rate", "bias_x_norm", "bias_y_norm"):
@@ -175,10 +177,52 @@ def eye_metrics(origins: np.ndarray, gaze_points: np.ndarray, target_ucs: np.nda
     return {"n_samples": int(n), "accuracy_deg": float(np.mean(acc)), "precision_rms_s2s_deg": prec}
 
 
+def eye_position(samples: list[dict]) -> "list[float] | None":
+    """
+    区間内の眼の位置（UCS, mm。両眼の中点の平均）。片眼だけ有効なサンプルはその眼の位置を使う。
+    頭部位置ガイドの記録（head_position_guide.summarize_position の x/y/z_mid_mm）と同じ定義で、
+    ガイド確定時から較正・検証の最中に頭が動いたかを比べるために使う。
+    """
+    mids = []
+    for s in samples:
+        eyes = [s[f"{e}_gaze_origin_in_user_coordinate_system"] for e in ("left", "right")
+                if s.get(f"{e}_gaze_origin_validity") == 1]
+        if eyes:
+            mids.append(np.mean(np.asarray(eyes, dtype=float), axis=0))
+    return np.mean(mids, axis=0).tolist() if mids else None
+
+
+def binocular_avg_metrics(samples: list[dict], target_xy: tuple[float, float], display_area: dict) -> dict:
+    """
+    左右眼の視線を平均してから求めた accuracy / precision / bias。解析の視線（v5 の center_x/center_y＝
+    有効な眼の注視点の平均。片眼だけならその眼）と同じ作り方。両眼が有効なサンプルでは、眼の位置と
+    注視点（UCS）をそれぞれ平均したベクトルで角度を出す。
+    左右の眼が逆向きにずれる人では、左右それぞれの誤差の平均（accuracy_deg）より小さくなる。
+    """
+    target_ucs = display_point_to_ucs(*target_xy, display_area)
+    o, g, d = [], [], []
+    for s in samples:
+        eyes = [e for e in ("left", "right")
+                if s.get(f"{e}_gaze_point_validity") == 1 and s.get(f"{e}_gaze_origin_validity") == 1]
+        if eyes:
+            o.append(np.mean([s[f"{e}_gaze_origin_in_user_coordinate_system"] for e in eyes], axis=0))
+            g.append(np.mean([s[f"{e}_gaze_point_in_user_coordinate_system"] for e in eyes], axis=0))
+            d.append(np.mean([s[f"{e}_gaze_point_on_display_area"] for e in eyes], axis=0))
+    m = eye_metrics(np.asarray(o, dtype=float).reshape(-1, 3), np.asarray(g, dtype=float).reshape(-1, 3), target_ucs)
+    m["bias_x_norm"] = m["bias_y_norm"] = None
+    if d:
+        d = np.asarray(d, dtype=float)
+        m["bias_x_norm"] = float(d[:, 0].mean() - target_xy[0])
+        m["bias_y_norm"] = float(d[:, 1].mean() - target_xy[1])
+    return m
+
+
 def point_metrics(samples: list[dict], target_xy: tuple[float, float], display_area: dict) -> dict:
     """
     1検証点分のサンプル（SDK の gaze_data 辞書のリスト）から、左右眼と両眼平均の指標を出す。
     正規化座標上の平均ずれ（bias）も出す（画面端で上下どちらにずれるかを見るため）。
+    1.4.0 から、解析と同じ作り方の両眼平均の視線の指標（binocular_avg）と、区間内の眼の位置（eye_xyz_mm）も出す。
+    accuracy_deg / precision_rms_s2s_deg（左右眼の値の平均）の定義は変えていない。
     """
     target_ucs = display_point_to_ucs(*target_xy, display_area)
     out = {"target_x": target_xy[0], "target_y": target_xy[1], "n_samples_window": len(samples)}
@@ -206,6 +250,8 @@ def point_metrics(samples: list[dict], target_xy: tuple[float, float], display_a
             precs.append(m["precision_rms_s2s_deg"])
     out["accuracy_deg"] = float(np.mean(accs)) if accs else None
     out["precision_rms_s2s_deg"] = float(np.mean(precs)) if precs else None
+    out["binocular_avg"] = binocular_avg_metrics(samples, target_xy, display_area)
+    out["eye_xyz_mm"] = eye_position(samples)
     return out
 
 
@@ -379,11 +425,16 @@ def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], di
     各検証点を順に提示して指標を出す。retry_threshold_deg を指定すると、閾値を超えた点
     （またはデータが取れなかった点）を最後にもう1回だけ提示し直す（1回目の値も記録する）。
     1点だけ極端に悪い場合は、多くが「その点を見ていなかった（瞬き・次の点の予測など）」ことによる。
+    各測定には提示の通し番号（presentation_index、0 始まり）と段階（presentation_phase：first / retry）を付ける。
+    ずれが次に提示した点の方向を向いているか（先読み）を、実装から推測せずに調べるため。
     """
     collector = SampleCollector()
     eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA, collector.callback, as_dictionary=True)
+    counter = {"next": 0}
 
-    def measure(tgt: dict) -> dict:
+    def measure(tgt: dict, phase: str) -> dict:
+        index = counter["next"]
+        counter["next"] += 1
         if not screen.target(tgt["x"], tgt["y"], shrink_sec):
             raise KeyboardInterrupt
         onset = time.perf_counter()
@@ -394,18 +445,18 @@ def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], di
         acc = m["accuracy_deg"]
         print(f"  {tgt['label']:<28} accuracy={'—' if acc is None else f'{acc:.2f}°'}  "
               f"n={m['n_samples_window']}")
-        return {**tgt, **m}
+        return {**tgt, **m, "presentation_index": index, "presentation_phase": phase}
 
     results = []
     try:
         for tgt in targets:
-            results.append(measure(tgt))
+            results.append(measure(tgt, "first"))
         if retry_threshold_deg is not None:
             idx = points_to_retry(results, retry_threshold_deg)
             if idx:
                 print(f"  --- 誤差が {retry_threshold_deg}° を超えた {len(idx)} 点をもう一度測ります ---")
                 for i in idx:
-                    results[i] = merge_retry(results[i], measure(targets[i]))
+                    results[i] = merge_retry(results[i], measure(targets[i], "retry"))
     finally:
         eyetracker.unsubscribe_from(tr.EYETRACKER_GAZE_DATA, collector.callback)
     return results
@@ -579,6 +630,11 @@ def main(argv=None):
                       "（calibration_ok=False なら不合格。None は較正なし＝--validate-only）",
             "valid_rate": "検証区間のサンプルのうち、その眼の gaze_point と gaze_origin が有効な割合（0件なら 0.0）",
             "bias_norm": "正規化座標上の平均ずれ（注視点平均 − 目標）。正の y は下方向",
+            "binocular_avg": "左右眼の視線を平均してから求めた accuracy / precision / bias（解析の center_x/center_y と同じ作り方。"
+                             "片眼だけ有効なサンプルはその眼）。合否には使わない（1.4.0 で追加）",
+            "eye_xyz_mm": "検証区間内の眼の位置（UCS, mm。両眼の中点の平均、片眼のみならその眼）。head_position.recorded と同じ定義（1.4.0 で追加）",
+            "presentation_index": "検証の測定の提示の通し番号（0 始まり、測り直しを含む）。presentation_phase は first / retry。"
+                                  "first_attempt / retry_attempt にもそれぞれの値を残す（1.4.0 で追加）",
             "retried": "1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、データ品質（両眼の有効率の低い方 → precision）"
                        "が良い方を採用（accuracy は採否に使わない）。両方を first_attempt / retry_attempt に残す",
         },

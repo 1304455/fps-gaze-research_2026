@@ -149,7 +149,8 @@ fps-gaze-research_2026/
 │   │
 │   ├── analysis/                【集計・QC】
 │   │   ├── aggregate_sessions.py  セッション横断の集計・QC レポート
-│   │   └── calib_compare.py       キャリブレーション検証結果の比較（上下端のずれなど）
+│   │   ├── calib_compare.py       キャリブレーション検証結果の比較（上下端のずれ、検証中の眼の移動など）
+│   │   └── calib_anticipation.py  検証点のずれが次に提示した点の方向を向いているか（先読み）の診断
 │   │
 │   └── test/                    【検証・補助ツール】
 │       ├── sync_calibration_tool-v2.py  同期オフセットの実測検証（較正用）

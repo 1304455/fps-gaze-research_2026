@@ -4,7 +4,7 @@
 研究室PC（Windows + PowerShell）で、**同じ PowerShell ウィンドウで上から順に**実行する前提。
 途中で作る変数（`$csv` など）を後の手順で使うので、ウィンドウを閉じたら手順3からやり直す。
 
-対応するバージョン：calibrate_validate 1.3.0 / v5 5.1.1 / aoi_analysis-ver3 3.2.0。
+対応するバージョン：calibrate_validate 1.4.0 / v5 5.1.1 / aoi_analysis-ver3 3.2.0。
 ETM の画面設定などの決定事項は CLAUDE.md §2、実機での検証結果は LAB_CHECKLIST.md を参照。
 
 ---

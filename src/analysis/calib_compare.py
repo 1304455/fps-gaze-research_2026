@@ -18,6 +18,9 @@
   horizontal_scale_pct / horizontal_offset_deg   横方向の同じ量
   top_bar_bias_y_deg      上部HUD（AOI中心の検証点で target_y < 0.2）の縦のずれの平均。正 = 下向き（中央寄り）
   bottom_bar_bias_y_deg   下部HUD（target_y > 0.8）の縦のずれの平均。負 = 上向き（中央寄り）
+  eye_z_shift_mm / eye_y_shift_mm   検証点ごとの眼の位置（calibrate_validate 1.4.0 の eye_xyz_mm）の中央値 −
+                          頭部位置ガイド確定時の位置。正の z = 遠ざかった、負 = 前に出た。正の y = 上へ（UCS）
+  eye_z_range_mm / eye_y_range_mm   検証点の間での眼の位置の幅（最大 − 最小）。1.3.0 以前の JSON では空
 ずれは左右眼の bias_*_norm の平均（片眼のみなら片眼）。度への換算は atan(ずれ[mm] / 眼−トラッカー距離)。
 
 使い方（PowerShell。ワイルドカードはスクリプト側で展開する）
@@ -55,7 +58,7 @@ PRINT_COLUMNS = [
     "file", "calib_margin", "display_angle_deg", "display_width_mm", "mean_accuracy_deg",
     "hud_max_accuracy_deg", "passed", "vertical_scale_pct", "horizontal_scale_pct",
     "top_bar_bias_y_deg", "bottom_bar_bias_y_deg", "left_mean_accuracy_deg", "right_mean_accuracy_deg",
-    "n_retried", "head_z_mm",
+    "n_retried", "head_z_mm", "eye_z_shift_mm", "eye_y_shift_mm",
 ]
 GROUP_COLUMNS = [
     "mean_accuracy_deg", "hud_max_accuracy_deg", "vertical_scale_pct", "horizontal_scale_pct",
@@ -106,6 +109,24 @@ def bias_norm_to_deg(bias_norm: float, size_mm: "float | None", distance_mm: flo
     if size_mm is None or math.isnan(bias_norm):
         return float("nan")
     return math.degrees(math.atan(bias_norm * size_mm / distance_mm))
+
+
+def eye_drift(points: list[dict], head: dict) -> dict:
+    """
+    検証中の頭の動き：検証点ごとの眼の位置（eye_xyz_mm、1.4.0 以降）の中央値とガイド確定時の差、点の間での幅。
+    眼の位置が無い（1.3.0 以前）ときは NaN。
+    """
+    xyz = np.array([p["eye_xyz_mm"] for p in points if p.get("eye_xyz_mm") is not None], dtype=float).reshape(-1, 3)
+    out = {k: float("nan") for k in ("eye_z_shift_mm", "eye_y_shift_mm", "eye_z_range_mm", "eye_y_range_mm")}
+    if not len(xyz):
+        return out
+    out["eye_z_range_mm"] = float(xyz[:, 2].max() - xyz[:, 2].min())
+    out["eye_y_range_mm"] = float(xyz[:, 1].max() - xyz[:, 1].min())
+    if head.get("z_mid_mm") is not None:
+        out["eye_z_shift_mm"] = float(np.median(xyz[:, 2]) - head["z_mid_mm"])
+    if head.get("y_mid_mm") is not None:
+        out["eye_y_shift_mm"] = float(np.median(xyz[:, 1]) - head["y_mid_mm"])
+    return out
 
 
 def summarize_calib(calib: dict, name: str = "") -> dict:
@@ -159,6 +180,7 @@ def summarize_calib(calib: dict, name: str = "") -> dict:
         "horizontal_offset_deg": bias_norm_to_deg(h_off, w_mm, dist),
         "top_bar_bias_y_deg": bias_norm_to_deg(float(np.nanmean(top)), h_mm, dist) if top else float("nan"),
         "bottom_bar_bias_y_deg": bias_norm_to_deg(float(np.nanmean(bottom)), h_mm, dist) if bottom else float("nan"),
+        **eye_drift(pts, head),
     }
     for eye in ("left", "right"):
         accs = [(p.get(eye) or {}).get("accuracy_deg") for p in pts]

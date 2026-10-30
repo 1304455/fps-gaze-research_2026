@@ -25,7 +25,7 @@
 |---|---|---|---|
 | T0 | コード対応済み | README からパスワード削除、`.gitignore`、`requirements*.txt`、`screen_name`、import フォールバック | ~~OBS パスワードの変更~~（10/21 変更済み）、Windows の venv で `pip install` 確認 |
 | T1 | コード対応済み | `tobii_capture_with_sync_flash_v5.py`（列を末尾追加、NA 警告。5.0.1 でログの秘密情報を伏せ字、5.1.0 で眼位置 x/y を追加、5.1.1 で meta に解析の時刻列を記録）、`docs/templates/sessions_manifest_template.csv` | 5分間テストは 10/13 に実施（5.0.1）。**5.1.0 で列を追加したので再テスト** |
-| T2 | コード対応済み | `calibrate_validate.py`（1.3.0。頭部位置ガイド、`--reference` で x・y・z を標準姿勢に、測り直しはデータ品質で採否、SDK 較正の失敗は不合格）、`calib_compare.py`（validate-only を margin 比較から外す） | ~~上下端の中央寄りのずれ~~ → 10/20 に ETM の相対角度を 12° に決定（LAB_CHECKLIST 2c）。残り：合否閾値の合意、前のめり姿勢での精度低下の扱い |
+| T2 | コード対応済み | `calibrate_validate.py`（1.4.0。頭部位置ガイド、`--reference` で x・y・z を標準姿勢に、測り直しはデータ品質で採否、SDK 較正の失敗は不合格、検証点ごとの眼の位置・両眼平均の視線の精度・提示順の記録）、`calib_compare.py`（validate-only を margin 比較から外す、検証中の眼の移動）、`calib_anticipation.py`（先読みの診断） | ~~上下端の中央寄りのずれ~~ → 10/20 に ETM の相対角度を 12° に決定（LAB_CHECKLIST 2c）。残り：合否閾値の合意、前のめり姿勢での精度低下の扱い |
 | T3 | コード対応済み | `src/visualizer/segment_annotator.py`（手で編集した区間 CSV は退避してから上書き）、`aoi_analysis-ver3.py --compare-proc`（時刻の最近傍で照合） | 予備実験1試合での注釈と旧方式との突き合わせ |
 | T4 | コード対応済み | `aoi_analysis-ver3.py`（3.2.0）＋ `gaze_metrics.py` / `aoi_geometry.py`。決定事項1・3・4 は合意済みで反映。条件（パラメータ・AOI・入力・区間・同期）の違う結果の上書き防止を解析前に判定、区間の coverage | ~~決定事項2~~（10/21：分母に含める）、予備実験での I-DT 閾値と 200 ms の妥当性確認（10/20 の通し確認では 75〜500 ms の欠測が0件で判断材料なし）、~~下のバー4 AOI の注視0件の切り分け~~（10/21：見ていない。他の参加者で確認） |
 | T5 | 一部対応 | `aoi_check.py`（視角サイズ表、calib との比較、フレーム描画）、AOI JSON に `display` 追加、`radius_deg` 対応、台帳の解像度チェック | ~~crosshair の半径~~（10/21：`radius_deg: 2.0` に変更） |

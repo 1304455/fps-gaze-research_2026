@@ -293,6 +293,30 @@ python .\src\gaze_estimation\calibrate_validate.py --subject TEST --validate-onl
 > - [ ] B.（A でも先読みが残る場合）`--settle-ms 200` だけ変える。採用するなら検証手順の変更なので、全員・実験者の基準を同じ値にそろえる（要相談）
 > - [ ] C. 較正の直後に `--validate-only` をもう1回。2回の検証で上段のずれが変われば検証のときの問題（頭・注視）、同じなら較正の問題
 > - [ ] `calib_PL01_20261029_155725.json`（実験者）を `data\raw\_excluded\` に移し、理由を同じフォルダの README.txt に書く（10/29 決定。中身は変えず、ワイルドカードや `Select-Object -Last 1` に拾われないようにする）
+> - 先読みの判定はリポジトリの `src\analysis\calib_anticipation.py` で行う（10/30。一時スクリプトと同じ判定。1.4.0 の JSON では記録した提示順を使う）。
+>   C の判定は `calib_compare.py` の `eye_z_shift_mm` / `eye_y_shift_mm`（検証中の眼の位置 − ガイド確定時）も見る
+
+#### 2026-10-30：calibrate_validate 1.4.0（F1・F6、記録の追加のみ。凍結前に研究室PCで確認）
+
+検証点ごとに `eye_xyz_mm`（区間内の眼の位置。`head_position.recorded` と同じ定義）と `binocular_avg`（左右眼の視線を平均してから
+求めた accuracy / precision / bias。解析の `center_x` と同じ作り方。**合否には使わない**）を、各測定に `presentation_index`
+（提示の通し番号）と `presentation_phase`（first / retry）を追加した。既存のキーと値、合否の判定は変えていない。
+
+```powershell
+git pull
+python -m pytest
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python .\src\analysis\calib_compare.py $calib --group-by none
+python .\src\analysis\calib_anticipation.py $calib
+```
+- [ ] `python -m pytest` が全件 passed
+- [ ] 較正＋検証が 1.3.0 と同じように最後まで動き、`script.version` が `1.4.0`
+- [ ] JSON の各検証点に `eye_xyz_mm`（z が 600〜700 mm 程度）、`binocular_avg`、`presentation_index`、`presentation_phase` がある
+- [ ] `presentation_index` が 1周目は 0 から一覧の順、測り直しの点はその続きの番号（`first_attempt` / `retry_attempt` にも番号がある）
+- [ ] `calib_compare` の `eye_z_shift_mm` / `eye_y_shift_mm` に値が入る（標準姿勢で頭を動かさなければ数 mm 程度）
+- [ ] `calib_anticipation` の見出しが「提示順: 記録」になる
+- [ ] 確認できたら凍結（10/31）。以後の計測側の変更は不具合修正のみ
 
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
@@ -320,7 +344,7 @@ python -c "import pandas as pd, sys; d=pd.read_csv(sys.argv[1]); print(d[['left_
 > 同じ日の 5.1.1 で meta.json の `time_reference_notes` に `analysis_time_columns` を追加した（CSV は変わらない）。
 
 - [ ] 短い計測の `_meta.json` に `time_reference_notes.analysis_time_columns` がある
-- [ ] calibrate_validate（1.3.0）：ディスプレイ番号に `0` を入れると入力し直しになる（以前は最後の画面が選ばれていた）
+- [ ] calibrate_validate（1.3.0 以降）：ディスプレイ番号に `0` を入れると入力し直しになる（以前は最後の画面が選ばれていた）
 - [ ] calibrate_validate：保存された calib JSON の `summary.calibration_ok` が `true`（SDK 較正）／`null`（`--validate-only`）。
       較正が失敗した回は `false` で、精度によらず不合格になる
 
