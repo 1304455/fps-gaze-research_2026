@@ -40,6 +40,7 @@ python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01 --validate-o
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -63,7 +64,7 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
 
 from aoi_geometry import aoi_center  # noqa: E402
 
-SCRIPT_VERSION = "1.7.0"
+SCRIPT_VERSION = "1.8.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
@@ -578,6 +579,26 @@ def run_warmup(tr, eyetracker, screen: TargetScreen, display_area: dict, shrink_
     return {**tgt, **m}
 
 
+def retrieve_calibration(eyetracker) -> "tuple[bytes | None, str | None]":
+    """
+    装置で使っている較正データ（SDK の retrieve_calibration_data）と、取り出せなかったときのエラー文字列（1.8.0）。
+    失敗しても較正・検証は止めない。
+    """
+    try:
+        data = eyetracker.retrieve_calibration_data()
+    except Exception as e:  # 接続・ライセンス等の SDK の例外
+        return None, f"{type(e).__name__}: {e}"
+    if not data:
+        return None, "装置に較正データがありません"
+    return bytes(data), None
+
+
+def calibration_data_record(data: "bytes | None", error: "str | None", file_name: "str | None" = None) -> dict:
+    """較正データの記録（SHA-256、大きさ、保存したファイル名、エラー）。"""
+    return {"sha256": hashlib.sha256(data).hexdigest() if data else None,
+            "size_bytes": len(data) if data else None, "file": file_name, "error": error}
+
+
 def check_only(tr, eyetracker) -> int:
     print(f"デバイス: {eyetracker.device_name} / モデル: {eyetracker.model} / シリアル: "
           f"{getattr(eyetracker, 'serial_number', None)}")
@@ -709,6 +730,8 @@ def main(argv=None):
                       "結果は『不合格』として保存します。姿勢を直して、もう一度実行してください。")
         if not screen.message("検証：同じように点を見続けてください\n（何かキーを押すと開始 / ESC で中止）"):
             return
+        # 検証に使う（＝この後の試合で使う）較正。今回の較正が失敗した回は、装置に残っていた前回の較正になる
+        active_data, active_error = retrieve_calibration(eyetracker)
         if not args.no_warmup:
             warmup = run_warmup(tr, eyetracker, screen, display_area, args.shrink_sec, args.settle_ms, args.window_ms)
         points = run_validation(tr, eyetracker, screen, targets, display_area,
@@ -732,6 +755,16 @@ def main(argv=None):
         print(f"保存しました: {out}")
         return
 
+    # 今回の較正が成功した回だけ、較正データを JSON と同じ名前で保存する（apply_calibration.py で入れ直すため）
+    calib_data_file = None
+    if calibration is not None and calibration["succeeded"] and active_data:
+        calib_data_file = f"calib_{args.subject}_{stamp}.calibdata"
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        with open(args.output_dir / calib_data_file, "wb") as f:
+            f.write(active_data)
+    active_calibration = calibration_data_record(active_data, active_error, calib_data_file)
+    if active_error:
+        print(f"⚠ 較正データを取り出せませんでした（較正・検証の結果は保存します）: {active_error}")
     verdict = judge(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg,
                     calibration_ok=None if calibration is None else calibration["succeeded"])
     verdict["retried_points"] = [p["label"] for p in points if p.get("retried")]
@@ -774,6 +807,10 @@ def main(argv=None):
             "validation_warmup": "1.7.0 から、検証の前に練習用の点（中央）を1回提示して測った結果。最初に提示した点の誤差が"
                                  "大きくなる傾向への対策で、合否・全体平均・validation_points・presentation_index・点の順番の乱数には"
                                  "使わない（--no-warmup なら null）",
+            "active_calibration": "1.8.0 から、検証を始める時点で装置が使っていた較正データの SHA-256 と大きさ。今回の較正が成功した回は "
+                                  "データを file（JSON と同じフォルダ）に保存し、apply_calibration.py で入れ直せる。較正が失敗した回と "
+                                  "--validate-only は保存せず、装置に残っていた較正の SHA-256 だけを記録する（試合後の検証では、試合で "
+                                  "使った較正と一致するかの確認に使う）",
             "presentation_order": "1.5.0 から、較正点は中央を最初に固定して残り8点を、検証点は1周目・測り直しとも全点を、"
                                   "乱数シード seed でランダムな順に提示する（randomized=false は --fixed-order＝1.4.0 以前の固定の順番）。"
                                   "parameters.calibration_points は実際の提示順。validation_points は提示順にかかわらず一覧の順に並べる",
@@ -783,6 +820,7 @@ def main(argv=None):
         "calibration": calibration if calibration else {"status": "not_performed (--validate-only)"},
         "validation_points": points,
         "validation_warmup": warmup,
+        "active_calibration": active_calibration,
         "summary": verdict,
     }
     with open(out, "w", encoding="utf-8") as f:

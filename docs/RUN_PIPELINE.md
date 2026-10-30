@@ -4,7 +4,7 @@
 研究室PC（Windows + PowerShell）で、**同じ PowerShell ウィンドウで上から順に**実行する前提。
 途中で作る変数（`$csv` など）を後の手順で使うので、ウィンドウを閉じたら手順3からやり直す。
 
-対応するバージョン：calibrate_validate 1.7.0 / v5 5.1.1 / aoi_analysis-ver3 3.2.0。
+対応するバージョン：calibrate_validate 1.8.0 / apply_calibration 1.0.0 / v5 5.1.1 / aoi_analysis-ver3 3.2.0。
 ETM の画面設定などの決定事項は CLAUDE.md §2、実機での検証結果は LAB_CHECKLIST.md を参照。
 
 ---
@@ -37,7 +37,27 @@ python .\src\analysis\calib_compare.py $calib --group-by none
 ```
 - [ ] `passed` が True
 - [ ] **`display_angle_deg` が 12.0**
-- 不合格なら休憩してから手順1をやり直す
+- 不合格なら休憩してから手順1をやり直す（**最大3回**。2026-10-30 決定）
+- 合格した回があれば、その回の較正が装置に残っている（合格したらそこで止める）→ 手順2へ
+
+### 1b. 3回とも不合格だったとき（2026-10-30 決定）
+
+試合は行うが、データは「較正不合格」として主解析から除外し、感度分析でのみ使う。
+3回のうち「一番良い回」の較正を入れ直してから試合をする（規則は実験前に決めた案1：合格 → HUD の点の不合格の数が少ない →
+全点平均が小さい → 新しい回）。
+
+```powershell
+$cands = (Get-ChildItem .\data\raw\calib_${subj}_*.json | Sort-Object LastWriteTime).FullName
+python .\src\gaze_estimation\apply_calibration.py $cands --dry-run
+python .\src\gaze_estimation\apply_calibration.py $cands
+$apply = (Get-ChildItem .\data\raw\calibapply_${subj}_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+$sel = (Get-Content $apply -Raw -Encoding UTF8 | ConvertFrom-Json).selected_calib_json
+$calib = (Join-Path (Resolve-Path .\data\raw) $sel)
+```
+- [ ] `入れ直し: 成功（SHA-256 一致）` と出る（出なければ試合に進まない）
+- [ ] `$calib` が選ばれた回の calib JSON になっている（台帳の `calibration_file` にはこのファイルを書く）
+- 台帳の notes に `calib_failed_3x; calib_best=<選ばれた calib JSON>; calibapply=<calibapply_*.json>` を書く
+- 入れ直した後は頭と Spark を動かさずに手順2へ
 
 ## 2. 計測（較正の後、頭と Spark を動かさずに続けて）
 
@@ -64,6 +84,11 @@ python .\src\analysis\calib_compare.py $calib $post --group-by none
 - `--reference` は付けない（標準姿勢に合わせ直すと、試合中の姿勢での精度にならない）
 - 合否（`passed`）は記録だけで、除外基準には使わない。卒論では「試合前 → 試合後の精度の変化」と、試合後の眼の距離（`head_z_mm`）を報告する
 - `calib_compare` の2行（試合前・試合後）で `mean_accuracy_deg`、`hud_max_accuracy_deg`、上下のバーのずれ、`head_z_mm` を比べる
+- 試合中に使っていた較正の確認（1.8.0 以降）：試合後の JSON の `active_calibration.sha256` が、試合前の `$calib`（手順1b で入れ直した場合は
+  `calibapply_*.json` の `applied_sha256`）と一致すること。一致しなければ、試合の前後のどこかで較正が変わっている → 台帳の notes に記録する
+```powershell
+python -c "import json,sys; a=json.load(open(sys.argv[1],encoding='utf-8'))['active_calibration']['sha256']; b=json.load(open(sys.argv[2],encoding='utf-8'))['active_calibration']['sha256']; print('一致' if a==b else '不一致', a[:12], b[:12])" $calib $post
+```
 
 ## 3. ファイルの場所を変数にまとめる
 

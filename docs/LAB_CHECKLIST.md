@@ -425,6 +425,34 @@ python .\src\analysis\calib_compare.py $calib --group-by none
 - [ ] 確認できたら凍結し、main への PR を作る（10/30 研究室PCで上の項目を確認済み。凍結・PR は未）
 - [ ] 効果の確認（凍結後でよい）：1.7.0 の回を重ね、最初の点（presentation_index 0）の1回目の誤差がその回の他の点より悪い傾向が消えたかを見る（10/30 の4回：悪い方から 1・4・7・3 位）
 
+#### 2026-10-30：calibrate_validate 1.8.0 と apply_calibration 1.0.0（較正データの保存と入れ直し。凍結前に研究室PCで確認）
+
+決定（CLAUDE.md §2「較正が不合格だった参加者」）：3回とも不合格なら、案1の規則で一番良い回の較正を入れ直して試合をする。
+1.8.0 は較正が成功した回の較正データを `calib_<ID>_<日時>.calibdata` に保存し、どの回でも検証を始める時点の装置の較正の
+SHA-256 を `active_calibration` に記録する。`apply_calibration.py` は規則で回を選び、入れ直して SHA-256 で一致を確かめ、
+`calibapply_<ID>_<日時>.json` に残す。別のアイトラッカーの較正は入れ直さない（シリアル番号）。ETM の画面設定が違えば警告。
+
+確認（実験者で、較正＋検証を2回 → 1回目の較正を入れ直す → 検証のみ、で入れ直しが効くかを見る）：
+```powershell
+git pull
+python -m pytest
+python .\src\gaze_estimation\calibrate_validate.py --subject TESTAPPLY --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+python .\src\gaze_estimation\calibrate_validate.py --subject TESTAPPLY --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+Get-ChildItem .\data\raw\calib_TESTAPPLY_*
+$first = (Get-ChildItem .\data\raw\calib_TESTAPPLY_*.json | Sort-Object LastWriteTime | Select-Object -First 1).FullName
+python .\src\gaze_estimation\apply_calibration.py $first
+python .\src\gaze_estimation\calibrate_validate.py --subject TESTAPPLY-post --validate-only --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$post = (Get-ChildItem .\data\raw\calib_TESTAPPLY-post_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python -c "import json,sys; a=json.load(open(sys.argv[1],encoding='utf-8'))['active_calibration']['sha256']; b=json.load(open(sys.argv[2],encoding='utf-8'))['active_calibration']['sha256']; print('一致' if a==b else '不一致', a[:12], b[:12])" $first $post
+python .\src\gaze_estimation\apply_calibration.py (Get-ChildItem .\data\raw\calib_TESTAPPLY_*.json).FullName --dry-run
+```
+- [ ] `python -m pytest` が全件 passed
+- [ ] 2回とも `calib_TESTAPPLY_<日時>.json` と同名の `.calibdata` ができ、JSON の `active_calibration` に `sha256`・`file` がある（2回の sha256 は違う値）
+- [ ] `apply_calibration.py $first` が「入れ直し: 成功（SHA-256 一致）」と出て、`calibapply_TESTAPPLY_*.json` ができる
+- [ ] 入れ直した後の検証のみ（`-post`）の `active_calibration.sha256` が1回目と一致する（＝装置の較正が1回目に戻った）
+- [ ] `--dry-run` で2回のうち規則どおりの回が選ばれる
+- [ ] 確認できたら凍結し、main への PR を作る
+
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
 > 2026-10-13 実施（過去の試合映像を視聴）：60.1 Hz、欠測率 0.7%、start_sync（confirmed）23 ms（既知 18.8±2.5 ms の範囲内）。
