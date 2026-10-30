@@ -168,3 +168,59 @@ def test_run_validation_records_presentation_order():
     assert res[1]["presentation_index"] == 4 and res[1]["accuracy_deg"] < 0.1
     assert all(r["eye_xyz_mm"] == pytest.approx([0.0, 190.0, 700.0]) for r in res)
     assert et.callback is None  # 購読を解除している
+
+
+# ---------------------------------------------------------------------------
+# F4（1.5.0）：点の提示順のランダム化
+# ---------------------------------------------------------------------------
+
+import random  # noqa: E402
+
+from calibrate_validate import calibration_points, shuffled_calibration_points, validation_order  # noqa: E402
+
+
+def test_shuffled_calibration_points_keeps_center_first():
+    pts = calibration_points(0.1)
+    assert shuffled_calibration_points(pts, None) == pts  # --fixed-order は 1.4.0 以前と同じ
+    orders = {tuple(shuffled_calibration_points(pts, random.Random(seed))) for seed in range(20)}
+    assert all(o[0] == (0.5, 0.5) for o in orders)
+    assert all(sorted(o) == sorted(pts) for o in orders)  # 点の集合は変わらない
+    assert len(orders) > 1  # 順番は変わる
+
+
+def test_order_is_reproducible_from_seed():
+    pts = calibration_points(0.1)
+    a, b = random.Random(12345), random.Random(12345)
+    assert shuffled_calibration_points(pts, a) == shuffled_calibration_points(pts, b)
+    assert validation_order(17, a) == validation_order(17, b)
+    assert validation_order(5, None) == [0, 1, 2, 3, 4]
+    assert sorted(validation_order(17, random.Random(1))) == list(range(17))
+
+
+def test_run_validation_random_order_keeps_list_order_and_records_presentation():
+    targets = [{"label": f"t{i}", "kind": "grid", "x": x, "y": y}
+               for i, (x, y) in enumerate([(0.1, 0.1), (0.5, 0.1), (0.9, 0.1), (0.1, 0.5), (0.5, 0.5), (0.9, 0.5)])]
+    bad = [(0.1, 0.1), (0.9, 0.1), (0.5, 0.5)]
+    et = _FakeEyetracker()
+    screen = _FakeScreen(et, bad_labels_xy=bad)
+    res = run_validation(_FakeTr(), et, screen, targets, DA, shrink_sec=0.0, settle_ms=0.0, window_ms=1000.0,
+                         retry_threshold_deg=1.5, rng=random.Random(7))
+    # 戻り値は一覧の順のまま
+    assert [r["label"] for r in res] == [t["label"] for t in targets]
+    # 1周目の提示順は記録どおりで、実際に画面に出した順と一致する
+    first_idx = {r["label"]: (r["first_attempt"]["presentation_index"] if r.get("retried") else r["presentation_index"])
+                 for r in res}
+    shown_first = [(t["x"], t["y"]) for t in sorted(targets, key=lambda t: first_idx[t["label"]])]
+    assert screen.shown[:6] == shown_first
+    assert sorted(first_idx.values()) == list(range(6))
+    # 測り直しは 6 番以降で、画面に出した順と一致する
+    retry_idx = {r["label"]: r["retry_attempt"]["presentation_index"] for r in res if r.get("retried")}
+    assert sorted(retry_idx.values()) == [6, 7, 8]
+    assert screen.shown[6:] == [(t["x"], t["y"]) for t in sorted((t for t in targets if t["label"] in retry_idx),
+                                                                 key=lambda t: retry_idx[t["label"]])]
+    # 同じシードなら同じ順番
+    et2 = _FakeEyetracker()
+    screen2 = _FakeScreen(et2, bad_labels_xy=bad)
+    run_validation(_FakeTr(), et2, screen2, targets, DA, shrink_sec=0.0, settle_ms=0.0, window_ms=1000.0,
+                   retry_threshold_deg=1.5, rng=random.Random(7))
+    assert screen2.shown == screen.shown

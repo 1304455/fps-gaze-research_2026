@@ -29,6 +29,8 @@ Tobii Pro SDK によるキャリブレーション＋検証ツール（IMPROVEME
 python .\\src\\gaze_estimation\\calibrate_validate.py --check-only
 # 2) キャリブレーション＋検証
 python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01
+# 2a) 点の順番は既定でランダム（1.5.0）。1.4.0 以前と同じ固定の順番にするなら --fixed-order、順番を再現するなら --order-seed
+python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01 --order-seed 12345
 # 2b) 前回と同じ頭の位置に合わせてから較正する／較正点を画面端に寄せる
 python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01 --reference .\\data\\raw\\calib_P01_20261020_135500.json --calib-margin 0.05
 # 3) キャリブレーションが使えない場合は検証のみ（Eye Tracker Manager で較正した後に）
@@ -42,6 +44,8 @@ import json
 import math
 import os
 import platform
+import random
+import secrets
 import sys
 import threading
 import time
@@ -59,7 +63,7 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
 
 from aoi_geometry import aoi_center  # noqa: E402
 
-SCRIPT_VERSION = "1.4.0"
+SCRIPT_VERSION = "1.5.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
@@ -80,6 +84,27 @@ def calibration_points(margin: float = DEFAULT_CALIB_MARGIN) -> list[tuple[float
         raise ValueError(f"--calib-margin は 0 より大きく 0.5 未満にしてください: {margin}")
     lo, hi = margin, 1.0 - margin
     return [(0.5, 0.5), (lo, lo), (0.5, lo), (hi, lo), (lo, 0.5), (hi, 0.5), (lo, hi), (0.5, hi), (hi, hi)]
+
+
+def shuffled_calibration_points(points: list[tuple[float, float]], rng: "random.Random | None"
+                                ) -> list[tuple[float, float]]:
+    """
+    較正点の提示順。rng が None なら与えた順（1.4.0 以前と同じ固定の順番）。
+    rng があれば、最初の点（中央）は固定し、残りの点の順番をランダムにする（参加者が次の点を予測できないように）。
+    """
+    if rng is None:
+        return list(points)
+    rest = list(points[1:])
+    rng.shuffle(rest)
+    return [points[0], *rest]
+
+
+def validation_order(n: int, rng: "random.Random | None") -> list[int]:
+    """検証点の1周目の提示順（index）。rng が None なら一覧の順、あれば全点をランダムな順にする。"""
+    order = list(range(n))
+    if rng is not None:
+        rng.shuffle(order)
+    return order
 
 
 def resolve_retry_threshold(no_retry: bool, retry_threshold_deg: "float | None", max_hud_accuracy_deg: float
@@ -420,13 +445,15 @@ def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float,
 
 def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], display_area: dict,
                    shrink_sec: float, settle_ms: float, window_ms: float,
-                   retry_threshold_deg: "float | None" = None) -> list[dict]:
+                   retry_threshold_deg: "float | None" = None, rng: "random.Random | None" = None) -> list[dict]:
     """
-    各検証点を順に提示して指標を出す。retry_threshold_deg を指定すると、閾値を超えた点
+    各検証点を提示して指標を出す。retry_threshold_deg を指定すると、閾値を超えた点
     （またはデータが取れなかった点）を最後にもう1回だけ提示し直す（1回目の値も記録する）。
     1点だけ極端に悪い場合は、多くが「その点を見ていなかった（瞬き・次の点の予測など）」ことによる。
     各測定には提示の通し番号（presentation_index、0 始まり）と段階（presentation_phase：first / retry）を付ける。
     ずれが次に提示した点の方向を向いているか（先読み）を、実装から推測せずに調べるため。
+    rng を渡すと、1周目と測り直しの提示順をランダムにする（1.5.0。None なら 1.4.0 以前と同じ一覧の順）。
+    戻り値は提示順にかかわらず targets と同じ並び（既存の比較ツールとの互換のため）。
     """
     collector = SampleCollector()
     eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA, collector.callback, as_dictionary=True)
@@ -447,12 +474,14 @@ def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], di
               f"n={m['n_samples_window']}")
         return {**tgt, **m, "presentation_index": index, "presentation_phase": phase}
 
-    results = []
+    results: list = [None] * len(targets)
     try:
-        for tgt in targets:
-            results.append(measure(tgt, "first"))
+        for i in validation_order(len(targets), rng):
+            results[i] = measure(targets[i], "first")
         if retry_threshold_deg is not None:
             idx = points_to_retry(results, retry_threshold_deg)
+            if rng is not None:
+                rng.shuffle(idx)
             if idx:
                 print(f"  --- 誤差が {retry_threshold_deg}° を超えた {len(idx)} 点をもう一度測ります ---")
                 for i in idx:
@@ -499,6 +528,10 @@ def main(argv=None):
     p.add_argument("--retry-threshold-deg", type=float, default=None,
                    help="検証で accuracy がこの値を超えた点を1回だけ測り直す（既定: --max-hud-accuracy-deg と同じ）")
     p.add_argument("--no-retry", action="store_true", help="検証点の測り直しをしない")
+    p.add_argument("--fixed-order", action="store_true",
+                   help="較正点・検証点を 1.4.0 以前と同じ固定の順番で出す（既定はランダムな順番）")
+    p.add_argument("--order-seed", type=int, default=None,
+                   help="点の順番の乱数シード（既定: 毎回自動で決めて JSON に記録する）。同じ順番を再現するときに指定")
     p.add_argument("--position-only", action="store_true", help="頭部位置ガイドだけを表示して記録する")
     p.add_argument("--skip-position-guide", action="store_true", help="キャリブレーション前の頭部位置ガイドを省略する")
     p.add_argument("--target-distance-mm", type=float, default=None,
@@ -552,7 +585,12 @@ def main(argv=None):
         if reference is None:
             print(f"⚠ 警告: {args.reference} に頭部位置の記録がありません。距離と左右だけで合わせます。")
     target_z, target_z_source = resolve_target_distance(args.target_distance_mm, reference)
-    calib_points = calibration_points(args.calib_margin)
+    if args.fixed_order:
+        order_seed, rng = None, None
+    else:
+        order_seed = args.order_seed if args.order_seed is not None else secrets.randbits(32)
+        rng = random.Random(order_seed)
+    calib_points = shuffled_calibration_points(calibration_points(args.calib_margin), rng)
     retry_thr = resolve_retry_threshold(args.no_retry, args.retry_threshold_deg, args.max_hud_accuracy_deg)
 
     display_area = display_area_dict(eyetracker)
@@ -582,7 +620,7 @@ def main(argv=None):
         if not screen.message("検証：同じように点を見続けてください\n（何かキーを押すと開始 / ESC で中止）"):
             return
         points = run_validation(tr, eyetracker, screen, targets, display_area,
-                                args.shrink_sec, args.settle_ms, args.window_ms, retry_thr)
+                                args.shrink_sec, args.settle_ms, args.window_ms, retry_thr, rng)
     except KeyboardInterrupt:
         print("中止しました（保存しません）。")
         return
@@ -620,7 +658,8 @@ def main(argv=None):
         "aoi_config": str(args.aoi) if args.aoi else None,
         "parameters": {"settle_ms": args.settle_ms, "window_ms": args.window_ms, "shrink_sec": args.shrink_sec,
                        "calib_margin": args.calib_margin, "calibration_points": calib_points,
-                       "retry_threshold_deg": retry_thr},
+                       "retry_threshold_deg": retry_thr,
+                       "presentation_order": {"randomized": not args.fixed_order, "seed": order_seed}},
         "head_position": head_position,
         "definitions": {
             "accuracy_deg": "眼位置(gaze_origin)から注視点(gaze_point, UCS)へのベクトルと、目標点へのベクトルの角度差の平均",
@@ -635,6 +674,9 @@ def main(argv=None):
             "eye_xyz_mm": "検証区間内の眼の位置（UCS, mm。両眼の中点の平均、片眼のみならその眼）。head_position.recorded と同じ定義（1.4.0 で追加）",
             "presentation_index": "検証の測定の提示の通し番号（0 始まり、測り直しを含む）。presentation_phase は first / retry。"
                                   "first_attempt / retry_attempt にもそれぞれの値を残す（1.4.0 で追加）",
+            "presentation_order": "1.5.0 から、較正点は中央を最初に固定して残り8点を、検証点は1周目・測り直しとも全点を、"
+                                  "乱数シード seed でランダムな順に提示する（randomized=false は --fixed-order＝1.4.0 以前の固定の順番）。"
+                                  "parameters.calibration_points は実際の提示順。validation_points は提示順にかかわらず一覧の順に並べる",
             "retried": "1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、データ品質（両眼の有効率の低い方 → precision）"
                        "が良い方を採用（accuracy は採否に使わない）。両方を first_attempt / retry_attempt に残す",
         },

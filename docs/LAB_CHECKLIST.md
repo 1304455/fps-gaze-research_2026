@@ -331,6 +331,28 @@ python .\src\analysis\calib_anticipation.py $calib
 > → x・y には注視方向による数 mm の成分が入る。`eye_x/y` の 5 mm 程度までの差は頭の移動とみなさない。弱点：実験者1回のみ
 - [x] 確認できたら凍結（10/31）。以後の計測側の変更は不具合修正のみ（10/30 に全項目を確認）
 
+#### 2026-10-30：calibrate_validate 1.5.0（F4、点の提示順のランダム化。凍結前に研究室PCで確認）
+
+決定（CLAUDE.md §2「較正・検証の点の提示順」）：較正点は中央を最初に固定して残り8点、検証点は1周目・測り直しとも全点をランダムな順に出す。
+シードは毎回自動で決めて `parameters.presentation_order.seed` に記録（`--order-seed` で再現、`--fixed-order` で 1.4.0 以前と同じ固定の順番）。
+`validation_points` の並びは一覧の順のまま（比較ツールとの互換）。実際の提示順は `presentation_index` と `parameters.calibration_points`。
+
+```powershell
+git pull
+python -m pytest
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); print(d['script']['version'], d['parameters']['presentation_order'], d['parameters']['calibration_points']); [print(p['presentation_index'], p['label']) for p in sorted(d['validation_points'], key=lambda p: p['presentation_index'])]" $calib
+python .\src\analysis\calib_compare.py $calib --group-by none
+```
+- [ ] `python -m pytest` が全件 passed
+- [ ] 較正の点が中央の後、毎回違う順番で出る（目視）。検証の点も毎回違う順番で出る
+- [ ] JSON の `script.version` が `1.5.0`、`parameters.presentation_order` が `randomized: true` とシードの数値
+- [ ] `parameters.calibration_points` の最初が `[0.5, 0.5]` で、残りの順番が一覧の順と違う
+- [ ] `presentation_index` の順に並べた検証点が、実際に出た順と一致する（目視で最初の数点）
+- [ ] 実験者の結果（平均 accuracy、HUD 最大）が 10/30 の 1.4.0 の回（0.64°、1.10°）と大きく違わない（順番を変えても実験者の精度は変わらないはず）
+- [ ] 確認できたら凍結。PL01 の手順 A・C は 1.5.0 で行う（順番のランダム化と説明の両方が入った状態での確認になる）
+
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
 > 2026-10-13 実施（過去の試合映像を視聴）：60.1 Hz、欠測率 0.7%、start_sync（confirmed）23 ms（既知 18.8±2.5 ms の範囲内）。
