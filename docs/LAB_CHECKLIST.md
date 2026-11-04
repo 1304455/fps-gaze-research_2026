@@ -451,7 +451,7 @@ python .\src\gaze_estimation\apply_calibration.py (Get-ChildItem .\data\raw\cali
 - [ ] `apply_calibration.py $first` が「入れ直し: 成功（SHA-256 一致）」と出て、`calibapply_TESTAPPLY_*.json` ができる
 - [ ] 入れ直した後の検証のみ（`-post`）の `active_calibration.sha256` が1回目と一致する（＝装置の較正が1回目に戻った）
 - [ ] `--dry-run` で2回のうち規則どおりの回が選ばれる
-- [ ] 確認できたら凍結し、main への PR を作る
+- [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main への PR は未）
 
 #### 2026-10-30：calibrate_validate 1.9.0（合否の基準を両眼平均の視線・credits 除外に。1.8.0 の確認と同じ日に）
 
@@ -466,7 +466,7 @@ python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_TESTAPPLY
 - [ ] 画面の最後に「判定（v2-binocular-no-credits-20261030）: 合格／不合格」と、両眼平均の視線の全体平均が出る
 - [ ] JSON の `summary` に `passed`・`passed_legacy`・`criteria_version`・`mean_accuracy_binocular_deg` がある
 - [ ] `calib_compare` の `passed` と `passed_current_criteria` が一致する（1.9.0 の回）
-- [ ] 確認できたら凍結し、main への PR を作る
+- [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main への PR は未）
 
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
@@ -596,7 +596,18 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 - [ ] 予備実験の他の参加者でも、下のバーの注視が0件に近いか確認する
 - [ ] （保留 10/21）9/9 の予備実験の動画が残っていれば、区間を付けて下のバーを「生存中」と「それ以外」に分けて確かめる
 - [ ] （保留 10/21）奇数・偶数ラウンドで Gaze % を比べる信頼性の確認スクリプト（1試合で値が安定するか）
-- [ ] アンレートの予備実験を1試合通す：所要時間、生存中の分析時間（分析時間の下限を決める）、区間付けの時間、試合後の検証（RUN_PIPELINE 2b）による精度の変化
+- [ ] アンレートの予備実験を1試合通す：所要時間、生存中の分析時間（分析時間の下限を決める）、区間付けの時間、試合後の検証（RUN_PIPELINE 2b）による精度の変化（途中：下の 11/04 の報告）
+
+> 2026-11-04 の報告（途中。calibrate_validate 1.9.0 で、アンレート1試合の通し。参加者・較正の合否・回数・試合後の検証の値は未報告）：
+> - 試合は 7 ラウンドで終了し、実験全体で約 20 分（改良前の試合は約 21 ラウンド・約 40 分）。アンレートでもラウンド数（＝分析時間）は試合ごとに大きく変わる
+> - 区間内のサンプル 21,413（**分析時間 約 357 秒**）、有効率 99.8%、offscreen 0.17%、AOI の外（outside）20.7%
+> - AOI ごとのサンプル（Gaze %）：crosshair 14,100（66.0%）、minimap 2,396（11.2%）、abilities 214（1.0%）、health_armor 62（0.29%）、
+>   ammo_weapon 52（0.24%）、round_timer 36（0.17%）、enemy_team_status 27（0.13%）、ally_team_status 12（0.06%）。上部の3つは合計 75 サンプル（1.25 秒）
+> - 下のバーに注視がある（重心 y ≥ 0.895 の注視 28 件、abilities・health_armor・ammo_weapon）。10/20 の実験者の試合（下のバー 0 件）とは違う
+> - AOI のすぐ上（y 0.87〜0.895）に注視が 4 件。下のバーは中央向き（上向き）に約 0.4〜0.7° ずれる既知の限界があり、下のバーを見ていても AOI の外と判定された可能性がある（案 C の AOI ごとの測定可否で確認する）
+> - 検証中の眼の位置のずれ `eye_z_shift_mm` = +23.0 mm（ガイド確定時より約 2.3 cm 遠い。実験者は 10/30 に −19.5〜+8.4 mm）
+> - 未確認：参加者が誰か（PL01 か）、較正の合否と回数、最初の点の傾向、試合後の検証の精度と、試合前と同じ較正だったか（SHA-256）
+
 - [ ] 10/21 に crosshair を `radius_deg: 2.0` に変えたので、それより前に解析したセッションを ver3 の `--overwrite` 付きで解析し直す（AOI の中身の違いで上書き防止が働く）。集計は `--qc-criteria .\data\qc_criteria.json` を付ける（RUN_PIPELINE 手順8）
 - [x] 台帳の記入例の行を削除し、このセッションの行を書いて、ver3 と集計を `--overwrite` 付きで実行し直す（10/21、主解析）
       （台帳の行が `qc.json` の `manifest_row` と `resolution_check` に入り、`qc_report` の `calibration_passed` が埋まることを確認）
