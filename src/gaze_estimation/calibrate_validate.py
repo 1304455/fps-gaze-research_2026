@@ -74,7 +74,7 @@ DEFAULT_MAX_HUD_ACCURACY_DEG = 1.5
 CRITERIA_VERSION = "v2-binocular-no-credits-20261030"
 CRITERIA_EXCLUDED_HUD = ("aoi_credits",)
 CRITERIA_TEXT = ("両眼平均の視線（binocular_avg）の accuracy で、全点平均 ≤ 閾値 かつ HUD の各点（credits を除く）≤ 閾値、"
-                 "かつ SDK の較正が失敗していない。credits は探索指標（2026-10-21）のため判定から外す")
+                 "かつ SDK の較正が失敗していない。credits は解析・考察から外す（2026-10-28）ため判定から外す")
 WARMUP_TARGET = {"label": "warmup_center", "kind": "warmup", "x": 0.5, "y": 0.5}
 GRID_VALIDATION_POINTS = [(0.1, 0.1), (0.5, 0.1), (0.9, 0.1), (0.1, 0.5), (0.5, 0.5),
                           (0.9, 0.5), (0.1, 0.9), (0.5, 0.9), (0.9, 0.9)]
