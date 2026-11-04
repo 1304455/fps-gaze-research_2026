@@ -125,7 +125,8 @@ fps-gaze-research_2026/
 │   ├── ui_fonts.py              pygame 画面の日本語フォント
 │   │
 │   ├── gaze_estimation/         【較正・計測】
-│   │   ├── calibrate_validate.py            9点キャリブレーション＋検証、頭部位置ガイド
+│   │   ├── calibrate_validate.py            9点キャリブレーション＋検証、頭部位置ガイド、較正データの保存
+│   │   ├── apply_calibration.py             保存した較正データの入れ直し（3回とも不合格のとき一番良い回）
 │   │   ├── head_position_guide.py           頭部位置ガイド（距離・左右・上下）
 │   │   └── tobii_capture_with_sync_flash_v5.py
 │   │                             視線取得の本体（SCRIPT_VERSION 5.1.1-eye-origin-pupil）
@@ -149,7 +150,8 @@ fps-gaze-research_2026/
 │   │
 │   ├── analysis/                【集計・QC】
 │   │   ├── aggregate_sessions.py  セッション横断の集計・QC レポート
-│   │   └── calib_compare.py       キャリブレーション検証結果の比較（上下端のずれなど）
+│   │   ├── calib_compare.py       キャリブレーション検証結果の比較（上下端のずれ、検証中の眼の移動など）
+│   │   └── calib_anticipation.py  検証点のずれが次に提示した点の方向を向いているか（先読み）の診断
 │   │
 │   └── test/                    【検証・補助ツール】
 │       ├── sync_calibration_tool-v2.py  同期オフセットの実測検証（較正用）

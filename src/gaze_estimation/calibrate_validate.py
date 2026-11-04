@@ -20,8 +20,9 @@ Tobii Pro SDK によるキャリブレーション＋検証ツール（IMPROVEME
   （眼−画面距離の近似を使わない）。
 - 結果を data/raw/calib_<subject>_<YYYYMMDD_HHMMSS>.json に保存
 
-合否閾値（--max-mean-accuracy-deg / --max-hud-accuracy-deg）の既定値 1.0° / 1.5° は
-計画段階の案で、ユーザーとの合意で確定する。
+合否（1.9.0、2026-10-30 決定、CRITERIA_VERSION）：両眼平均の視線（binocular_avg、解析の center_x と同じ作り方）で、
+全点平均 ≤ 1.0° かつ HUD の各点（credits を除く）≤ 1.5°。測り直しの判定も両眼平均の視線。
+1.8.0 までの判定（左右眼の誤差の平均、credits を含む）は judge() として残し、summary.passed_legacy に記録する。
 
 使い方（PowerShell）
 --------------------
@@ -29,6 +30,8 @@ Tobii Pro SDK によるキャリブレーション＋検証ツール（IMPROVEME
 python .\\src\\gaze_estimation\\calibrate_validate.py --check-only
 # 2) キャリブレーション＋検証
 python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01
+# 2a) 点の順番は既定でランダム（1.5.0）。1.4.0 以前と同じ固定の順番にするなら --fixed-order、順番を再現するなら --order-seed
+python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01 --order-seed 12345
 # 2b) 前回と同じ頭の位置に合わせてから較正する／較正点を画面端に寄せる
 python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01 --reference .\\data\\raw\\calib_P01_20261020_135500.json --calib-margin 0.05
 # 3) キャリブレーションが使えない場合は検証のみ（Eye Tracker Manager で較正した後に）
@@ -38,10 +41,13 @@ python .\\src\\gaze_estimation\\calibrate_validate.py --subject P01 --validate-o
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
 import platform
+import random
+import secrets
 import sys
 import threading
 import time
@@ -59,10 +65,17 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
 
 from aoi_geometry import aoi_center  # noqa: E402
 
-SCRIPT_VERSION = "1.3.0"
+SCRIPT_VERSION = "1.9.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
+DEFAULT_MAX_MEAN_ACCURACY_DEG = 1.0
+DEFAULT_MAX_HUD_ACCURACY_DEG = 1.5
+CRITERIA_VERSION = "v2-binocular-no-credits-20261030"
+CRITERIA_EXCLUDED_HUD = ("aoi_credits",)
+CRITERIA_TEXT = ("両眼平均の視線（binocular_avg）の accuracy で、全点平均 ≤ 閾値 かつ HUD の各点（credits を除く）≤ 閾値、"
+                 "かつ SDK の較正が失敗していない。credits は解析・考察から外す（2026-10-28）ため判定から外す")
+WARMUP_TARGET = {"label": "warmup_center", "kind": "warmup", "x": 0.5, "y": 0.5}
 GRID_VALIDATION_POINTS = [(0.1, 0.1), (0.5, 0.1), (0.9, 0.1), (0.1, 0.5), (0.5, 0.5),
                           (0.9, 0.5), (0.1, 0.9), (0.5, 0.9), (0.9, 0.9)]
 
@@ -80,6 +93,27 @@ def calibration_points(margin: float = DEFAULT_CALIB_MARGIN) -> list[tuple[float
         raise ValueError(f"--calib-margin は 0 より大きく 0.5 未満にしてください: {margin}")
     lo, hi = margin, 1.0 - margin
     return [(0.5, 0.5), (lo, lo), (0.5, lo), (hi, lo), (lo, 0.5), (hi, 0.5), (lo, hi), (0.5, hi), (hi, hi)]
+
+
+def shuffled_calibration_points(points: list[tuple[float, float]], rng: "random.Random | None"
+                                ) -> list[tuple[float, float]]:
+    """
+    較正点の提示順。rng が None なら与えた順（1.4.0 以前と同じ固定の順番）。
+    rng があれば、最初の点（中央）は固定し、残りの点の順番をランダムにする（参加者が次の点を予測できないように）。
+    """
+    if rng is None:
+        return list(points)
+    rest = list(points[1:])
+    rng.shuffle(rest)
+    return [points[0], *rest]
+
+
+def validation_order(n: int, rng: "random.Random | None") -> list[int]:
+    """検証点の1周目の提示順（index）。rng が None なら一覧の順、あれば全点をランダムな順にする。"""
+    order = list(range(n))
+    if rng is not None:
+        rng.shuffle(order)
+    return order
 
 
 def resolve_retry_threshold(no_retry: bool, retry_threshold_deg: "float | None", max_hud_accuracy_deg: float
@@ -101,13 +135,25 @@ def parse_display_index(text: str, n_monitors: int) -> int:
     return idx - 1
 
 
-def points_to_retry(points: list[dict], threshold_deg: float) -> list[int]:
-    """再試行する検証点の index（データなし、または accuracy が閾値超）。"""
-    return [i for i, p in enumerate(points) if p.get("accuracy_deg") is None or p["accuracy_deg"] > threshold_deg]
+def binocular_accuracy(point: dict) -> "float | None":
+    """検証点の両眼平均の視線の accuracy（1.4.0 以降の JSON にある。無ければ None）。"""
+    return (point.get("binocular_avg") or {}).get("accuracy_deg")
+
+
+def points_to_retry(points: list[dict], threshold_deg: float, basis: str = "per_eye") -> list[int]:
+    """
+    再試行する検証点の index（データなし、または accuracy が閾値超）。
+    basis="binocular" は両眼平均の視線の accuracy で判定する（1.9.0 の測り直し）。"per_eye" は左右眼の誤差の平均（1.8.0 まで）。
+    """
+    def acc(p):
+        return binocular_accuracy(p) if basis == "binocular" else p.get("accuracy_deg")
+    return [i for i, p in enumerate(points) if acc(p) is None or acc(p) > threshold_deg]
 
 
 def _compact(attempt: dict) -> dict:
-    keep = {k: attempt.get(k) for k in ("accuracy_deg", "precision_rms_s2s_deg", "n_samples_window")}
+    keep = {k: attempt.get(k) for k in ("accuracy_deg", "precision_rms_s2s_deg", "n_samples_window",
+                                        "presentation_index", "presentation_phase", "eye_xyz_mm")}
+    keep["binocular_avg_accuracy_deg"] = (attempt.get("binocular_avg") or {}).get("accuracy_deg")
     for e in ("left", "right"):
         if isinstance(attempt.get(e), dict):
             for k in ("accuracy_deg", "valid_rate", "bias_x_norm", "bias_y_norm"):
@@ -175,10 +221,52 @@ def eye_metrics(origins: np.ndarray, gaze_points: np.ndarray, target_ucs: np.nda
     return {"n_samples": int(n), "accuracy_deg": float(np.mean(acc)), "precision_rms_s2s_deg": prec}
 
 
+def eye_position(samples: list[dict]) -> "list[float] | None":
+    """
+    区間内の眼の位置（UCS, mm。両眼の中点の平均）。片眼だけ有効なサンプルはその眼の位置を使う。
+    頭部位置ガイドの記録（head_position_guide.summarize_position の x/y/z_mid_mm）と同じ定義で、
+    ガイド確定時から較正・検証の最中に頭が動いたかを比べるために使う。
+    """
+    mids = []
+    for s in samples:
+        eyes = [s[f"{e}_gaze_origin_in_user_coordinate_system"] for e in ("left", "right")
+                if s.get(f"{e}_gaze_origin_validity") == 1]
+        if eyes:
+            mids.append(np.mean(np.asarray(eyes, dtype=float), axis=0))
+    return np.mean(mids, axis=0).tolist() if mids else None
+
+
+def binocular_avg_metrics(samples: list[dict], target_xy: tuple[float, float], display_area: dict) -> dict:
+    """
+    左右眼の視線を平均してから求めた accuracy / precision / bias。解析の視線（v5 の center_x/center_y＝
+    有効な眼の注視点の平均。片眼だけならその眼）と同じ作り方。両眼が有効なサンプルでは、眼の位置と
+    注視点（UCS）をそれぞれ平均したベクトルで角度を出す。
+    左右の眼が逆向きにずれる人では、左右それぞれの誤差の平均（accuracy_deg）より小さくなる。
+    """
+    target_ucs = display_point_to_ucs(*target_xy, display_area)
+    o, g, d = [], [], []
+    for s in samples:
+        eyes = [e for e in ("left", "right")
+                if s.get(f"{e}_gaze_point_validity") == 1 and s.get(f"{e}_gaze_origin_validity") == 1]
+        if eyes:
+            o.append(np.mean([s[f"{e}_gaze_origin_in_user_coordinate_system"] for e in eyes], axis=0))
+            g.append(np.mean([s[f"{e}_gaze_point_in_user_coordinate_system"] for e in eyes], axis=0))
+            d.append(np.mean([s[f"{e}_gaze_point_on_display_area"] for e in eyes], axis=0))
+    m = eye_metrics(np.asarray(o, dtype=float).reshape(-1, 3), np.asarray(g, dtype=float).reshape(-1, 3), target_ucs)
+    m["bias_x_norm"] = m["bias_y_norm"] = None
+    if d:
+        d = np.asarray(d, dtype=float)
+        m["bias_x_norm"] = float(d[:, 0].mean() - target_xy[0])
+        m["bias_y_norm"] = float(d[:, 1].mean() - target_xy[1])
+    return m
+
+
 def point_metrics(samples: list[dict], target_xy: tuple[float, float], display_area: dict) -> dict:
     """
     1検証点分のサンプル（SDK の gaze_data 辞書のリスト）から、左右眼と両眼平均の指標を出す。
     正規化座標上の平均ずれ（bias）も出す（画面端で上下どちらにずれるかを見るため）。
+    1.4.0 から、解析と同じ作り方の両眼平均の視線の指標（binocular_avg）と、区間内の眼の位置（eye_xyz_mm）も出す。
+    accuracy_deg / precision_rms_s2s_deg（左右眼の値の平均）の定義は変えていない。
     """
     target_ucs = display_point_to_ucs(*target_xy, display_area)
     out = {"target_x": target_xy[0], "target_y": target_xy[1], "n_samples_window": len(samples)}
@@ -206,6 +294,8 @@ def point_metrics(samples: list[dict], target_xy: tuple[float, float], display_a
             precs.append(m["precision_rms_s2s_deg"])
     out["accuracy_deg"] = float(np.mean(accs)) if accs else None
     out["precision_rms_s2s_deg"] = float(np.mean(precs)) if precs else None
+    out["binocular_avg"] = binocular_avg_metrics(samples, target_xy, display_area)
+    out["eye_xyz_mm"] = eye_position(samples)
     return out
 
 
@@ -218,6 +308,46 @@ def validation_targets(aois: "list[dict] | None", min_separation: float = 0.03) 
             continue
         targets.append({"label": f"aoi_{aoi['name']}", "kind": "aoi", "aoi": aoi["name"], "x": cx, "y": cy})
     return targets
+
+
+def judge_binocular(points: list[dict], max_mean_acc: float, max_hud_acc: float,
+                    calibration_ok: "bool | None" = None,
+                    excluded_hud: "tuple[str, ...]" = CRITERIA_EXCLUDED_HUD) -> dict:
+    """
+    1.9.0 の合否（CRITERIA_VERSION）：両眼平均の視線の accuracy で、全点平均と HUD の各点（excluded_hud を除く）を判定する。
+    両眼平均の視線が無い点（両眼とも無効、または 1.4.0 より前の JSON）は points_without_data に入れ、HUD の点なら不合格にする。
+    """
+    accs = [binocular_accuracy(p) for p in points]
+    valid = [a for a in accs if a is not None]
+    mean_acc = float(np.mean(valid)) if valid else None
+    hud = [p for p in points if p.get("kind") == "aoi" and p.get("label") not in excluded_hud]
+    hud_fail = [p["label"] for p in hud if binocular_accuracy(p) is None or binocular_accuracy(p) > max_hud_acc]
+    missing = [p["label"] for p in points if binocular_accuracy(p) is None]
+    passed = mean_acc is not None and mean_acc <= max_mean_acc and not hud_fail and calibration_ok is not False
+    return {
+        "criteria_version": CRITERIA_VERSION,
+        "criteria": CRITERIA_TEXT,
+        "mean_accuracy_binocular_deg": mean_acc,
+        "hud_points_failed": hud_fail,
+        "hud_points_excluded_from_criteria": list(excluded_hud),
+        "points_without_binocular_data": missing,
+        "threshold_mean_accuracy_deg": max_mean_acc,
+        "threshold_hud_accuracy_deg": max_hud_acc,
+        "calibration_ok": calibration_ok,
+        "passed": bool(passed),
+    }
+
+
+def summarize_verdict(points: list[dict], max_mean_acc: float, max_hud_acc: float,
+                      calibration_ok: "bool | None" = None) -> dict:
+    """
+    calib JSON の summary。passed / hud_points_failed は 1.9.0 の判定（judge_binocular）。
+    1.8.0 までの判定（judge）は passed_legacy / hud_points_failed_legacy に残す。mean_accuracy_deg は従来どおり左右眼の誤差の平均。
+    """
+    legacy = judge(points, max_mean_acc, max_hud_acc, calibration_ok=calibration_ok)
+    current = judge_binocular(points, max_mean_acc, max_hud_acc, calibration_ok=calibration_ok)
+    return {**legacy, "passed_legacy": legacy["passed"], "hud_points_failed_legacy": legacy["hud_points_failed"],
+            **current}
 
 
 def judge(points: list[dict], max_mean_acc: float, max_hud_acc: float,
@@ -349,6 +479,65 @@ def display_area_dict(eyetracker) -> dict:
     }
 
 
+VALIDITY_KEYS = {
+    "validity_valid_and_used": "n_used",
+    "validity_valid_but_not_used": "n_valid_not_used",
+    "validity_invalid_and_not_used": "n_invalid",
+}
+
+
+def summarize_calibration_point(point) -> dict:
+    """
+    SDK の CalibrationPoint 1つを、眼ごとのサンプル数と補正後のずれにまとめる（1.6.0）。
+    属性名は tobii-research 2.1.0 のソースで確認（CalibrationPoint.position_on_display_area / calibration_samples、
+    CalibrationSample.left_eye / right_eye、CalibrationEyeData.position_on_display_area / validity）。
+    validity は文字列で、使った（valid_and_used）／有効だが使わなかった（valid_but_not_used：SDK の説明では
+    「視線が点から遠すぎた」など）／無効（invalid_and_not_used）。
+    ずれ（offset）はサンプルの位置 − 較正点の位置（正規化座標、正の y は下向き）。補正を作ったデータに補正を
+    当てた値なので精度の指標にはならない（どの点の較正がおかしかったかを見るためのもの）。
+    """
+    tx, ty = (float(v) for v in point.position_on_display_area)
+    samples = list(point.calibration_samples or ())
+    out = {"x": tx, "y": ty, "n_samples": len(samples)}
+    for side in ("left", "right"):
+        eyes = [getattr(smp, f"{side}_eye") for smp in samples]
+        groups = {key: [] for key in VALIDITY_KEYS.values()}
+        unknown = 0
+        for e in eyes:
+            key = VALIDITY_KEYS.get(str(e.validity))
+            if key is None:
+                unknown += 1  # SDK の版違いで validity の値が想定と違う場合に、0件と取り違えないよう数を残す
+            else:
+                groups[key].append(e.position_on_display_area)
+        for key, pos in groups.items():
+            out[f"{side}_{key}"] = len(pos)
+        out[f"{side}_n_unknown_validity"] = unknown
+        for key, label in (("n_used", "used"), ("n_valid_not_used", "not_used")):
+            pos = np.asarray(groups[key], dtype=float).reshape(-1, 2)
+            out[f"{side}_{label}_offset_x_norm"] = float(pos[:, 0].mean() - tx) if len(pos) else None
+            out[f"{side}_{label}_offset_y_norm"] = float(pos[:, 1].mean() - ty) if len(pos) else None
+        out[f"{side}_used_rate"] = (len(groups["n_used"]) / len(samples)) if samples else None
+    return out
+
+
+def summarize_calibration_result(result) -> tuple[list[dict], "str | None"]:
+    """
+    CalibrationResult の点ごとの記録と、読み取りに失敗したときのエラー文字列。
+    失敗しても較正そのものは止めず、点の位置（x, y）だけでも残す。両眼の成功以外では SDK が点の一覧を返さない（空）。
+    """
+    raw_points = list(getattr(result, "calibration_points", None) or ())
+    try:
+        return [summarize_calibration_point(p) for p in raw_points], None
+    except Exception as e:  # SDK の版違いなどで属性が無い場合
+        fallback = []
+        for p in raw_points:
+            try:
+                fallback.append({"x": float(p.position_on_display_area[0]), "y": float(p.position_on_display_area[1])})
+            except Exception:
+                pass
+        return fallback, f"{type(e).__name__}: {e}"
+
+
 def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float,
                     points: "list[tuple[float, float]] | None" = None) -> dict:
     calib = tr.ScreenBasedCalibration(eyetracker)
@@ -359,31 +548,40 @@ def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float,
             if not screen.target(x, y, shrink_sec):
                 raise KeyboardInterrupt
             status = calib.collect_data(x, y)
+            first_status = status
             if status != tr.CALIBRATION_STATUS_SUCCESS:
                 status = calib.collect_data(x, y)  # SDK サンプルどおり1回だけ再試行
-            point_status.append({"x": x, "y": y, "collect_status": str(status)})
+            point_status.append({"x": x, "y": y, "collect_status": str(status),
+                                 "first_collect_status": str(first_status)})
         result = calib.compute_and_apply()
     finally:
         calib.leave_calibration_mode()
-    used = []
-    for p in getattr(result, "calibration_points", []) or []:
-        used.append({"x": p.position_on_display_area[0], "y": p.position_on_display_area[1]})
+    used, detail_error = summarize_calibration_result(result)
+    if detail_error:
+        print(f"⚠ 較正点の詳細（眼ごとのサンプル数）を読み取れませんでした: {detail_error}")
     return {"status": str(result.status), "succeeded": result.status == tr.CALIBRATION_STATUS_SUCCESS,
-            "points": point_status, "points_used_by_sdk": used}
+            "points": point_status, "points_used_by_sdk": used, "points_detail_error": detail_error}
 
 
 def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], display_area: dict,
                    shrink_sec: float, settle_ms: float, window_ms: float,
-                   retry_threshold_deg: "float | None" = None) -> list[dict]:
+                   retry_threshold_deg: "float | None" = None, rng: "random.Random | None" = None) -> list[dict]:
     """
-    各検証点を順に提示して指標を出す。retry_threshold_deg を指定すると、閾値を超えた点
+    各検証点を提示して指標を出す。retry_threshold_deg を指定すると、閾値を超えた点
     （またはデータが取れなかった点）を最後にもう1回だけ提示し直す（1回目の値も記録する）。
     1点だけ極端に悪い場合は、多くが「その点を見ていなかった（瞬き・次の点の予測など）」ことによる。
+    各測定には提示の通し番号（presentation_index、0 始まり）と段階（presentation_phase：first / retry）を付ける。
+    ずれが次に提示した点の方向を向いているか（先読み）を、実装から推測せずに調べるため。
+    rng を渡すと、1周目と測り直しの提示順をランダムにする（1.5.0。None なら 1.4.0 以前と同じ一覧の順）。
+    戻り値は提示順にかかわらず targets と同じ並び（既存の比較ツールとの互換のため）。
     """
     collector = SampleCollector()
     eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA, collector.callback, as_dictionary=True)
+    counter = {"next": 0}
 
-    def measure(tgt: dict) -> dict:
+    def measure(tgt: dict, phase: str) -> dict:
+        index = counter["next"]
+        counter["next"] += 1
         if not screen.target(tgt["x"], tgt["y"], shrink_sec):
             raise KeyboardInterrupt
         onset = time.perf_counter()
@@ -394,21 +592,68 @@ def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], di
         acc = m["accuracy_deg"]
         print(f"  {tgt['label']:<28} accuracy={'—' if acc is None else f'{acc:.2f}°'}  "
               f"n={m['n_samples_window']}")
-        return {**tgt, **m}
+        return {**tgt, **m, "presentation_index": index, "presentation_phase": phase}
 
-    results = []
+    results: list = [None] * len(targets)
     try:
-        for tgt in targets:
-            results.append(measure(tgt))
+        for i in validation_order(len(targets), rng):
+            results[i] = measure(targets[i], "first")
         if retry_threshold_deg is not None:
-            idx = points_to_retry(results, retry_threshold_deg)
+            idx = points_to_retry(results, retry_threshold_deg, basis="binocular")
+            if rng is not None:
+                rng.shuffle(idx)
             if idx:
                 print(f"  --- 誤差が {retry_threshold_deg}° を超えた {len(idx)} 点をもう一度測ります ---")
                 for i in idx:
-                    results[i] = merge_retry(results[i], measure(targets[i]))
+                    results[i] = merge_retry(results[i], measure(targets[i], "retry"))
     finally:
         eyetracker.unsubscribe_from(tr.EYETRACKER_GAZE_DATA, collector.callback)
     return results
+
+
+def run_warmup(tr, eyetracker, screen: TargetScreen, display_area: dict, shrink_sec: float, settle_ms: float,
+               window_ms: float, target: "dict | None" = None) -> dict:
+    """
+    検証の前に練習用の点（既定は中央）を1回だけ提示して測る（1.7.0）。
+    最初に提示した点の誤差が大きくなる傾向（LAB_CHECKLIST 2c、10/30）への対策。結果は合否・validation_points・
+    presentation_index・点の順番の乱数のどれにも使わず、記録（validation_warmup）だけに残す。
+    """
+    tgt = dict(target or WARMUP_TARGET)
+    collector = SampleCollector()
+    eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA, collector.callback, as_dictionary=True)
+    try:
+        if not screen.target(tgt["x"], tgt["y"], shrink_sec):
+            raise KeyboardInterrupt
+        onset = time.perf_counter()
+        if not screen.hold((settle_ms + window_ms) / 1000.0 + 0.05):
+            raise KeyboardInterrupt
+        win = collector.between(onset + settle_ms / 1000.0, onset + (settle_ms + window_ms) / 1000.0)
+    finally:
+        eyetracker.unsubscribe_from(tr.EYETRACKER_GAZE_DATA, collector.callback)
+    m = point_metrics(win, (tgt["x"], tgt["y"]), display_area)
+    acc = m["accuracy_deg"]
+    print(f"  {tgt['label']:<28} accuracy={'—' if acc is None else f'{acc:.2f}°'}  n={m['n_samples_window']}（練習用の点。判定には使わない）")
+    return {**tgt, **m}
+
+
+def retrieve_calibration(eyetracker) -> "tuple[bytes | None, str | None]":
+    """
+    装置で使っている較正データ（SDK の retrieve_calibration_data）と、取り出せなかったときのエラー文字列（1.8.0）。
+    失敗しても較正・検証は止めない。
+    """
+    try:
+        data = eyetracker.retrieve_calibration_data()
+    except Exception as e:  # 接続・ライセンス等の SDK の例外
+        return None, f"{type(e).__name__}: {e}"
+    if not data:
+        return None, "装置に較正データがありません"
+    return bytes(data), None
+
+
+def calibration_data_record(data: "bytes | None", error: "str | None", file_name: "str | None" = None) -> dict:
+    """較正データの記録（SHA-256、大きさ、保存したファイル名、エラー）。"""
+    return {"sha256": hashlib.sha256(data).hexdigest() if data else None,
+            "size_bytes": len(data) if data else None, "file": file_name, "error": error}
 
 
 def check_only(tr, eyetracker) -> int:
@@ -441,13 +686,21 @@ def main(argv=None):
     p.add_argument("--shrink-sec", type=float, default=1.0, help="目標点の外円が縮む時間（秒）")
     p.add_argument("--settle-ms", type=float, default=800.0, help="検証：目標提示から集計開始までの待ち（ms）")
     p.add_argument("--window-ms", type=float, default=500.0, help="検証：集計に使う区間の長さ（ms）")
-    p.add_argument("--max-mean-accuracy-deg", type=float, default=1.0, help="合格条件：全点平均 accuracy（案。要合意）")
-    p.add_argument("--max-hud-accuracy-deg", type=float, default=1.5, help="合格条件：AOI中心の各点 accuracy（案。要合意）")
+    p.add_argument("--max-mean-accuracy-deg", type=float, default=DEFAULT_MAX_MEAN_ACCURACY_DEG,
+                   help="合格条件：両眼平均の視線の全点平均 accuracy（2026-10-30 決定 1.0）")
+    p.add_argument("--max-hud-accuracy-deg", type=float, default=DEFAULT_MAX_HUD_ACCURACY_DEG,
+                   help="合格条件：両眼平均の視線の HUD 各点 accuracy（credits を除く。2026-10-30 決定 1.5）")
     p.add_argument("--calib-margin", type=float, default=DEFAULT_CALIB_MARGIN,
                    help="キャリブレーション点の画面端からの距離（正規化。既定 0.1。HUD の上下端を較正範囲に入れるなら 0.05）")
     p.add_argument("--retry-threshold-deg", type=float, default=None,
                    help="検証で accuracy がこの値を超えた点を1回だけ測り直す（既定: --max-hud-accuracy-deg と同じ）")
     p.add_argument("--no-retry", action="store_true", help="検証点の測り直しをしない")
+    p.add_argument("--no-warmup", action="store_true",
+                   help="検証の前の練習用の点（中央、判定には使わない）を出さない（1.6.0 以前と同じ）")
+    p.add_argument("--fixed-order", action="store_true",
+                   help="較正点・検証点を 1.4.0 以前と同じ固定の順番で出す（既定はランダムな順番）")
+    p.add_argument("--order-seed", type=int, default=None,
+                   help="点の順番の乱数シード（既定: 毎回自動で決めて JSON に記録する）。同じ順番を再現するときに指定")
     p.add_argument("--position-only", action="store_true", help="頭部位置ガイドだけを表示して記録する")
     p.add_argument("--skip-position-guide", action="store_true", help="キャリブレーション前の頭部位置ガイドを省略する")
     p.add_argument("--target-distance-mm", type=float, default=None,
@@ -501,13 +754,19 @@ def main(argv=None):
         if reference is None:
             print(f"⚠ 警告: {args.reference} に頭部位置の記録がありません。距離と左右だけで合わせます。")
     target_z, target_z_source = resolve_target_distance(args.target_distance_mm, reference)
-    calib_points = calibration_points(args.calib_margin)
+    if args.fixed_order:
+        order_seed, rng = None, None
+    else:
+        order_seed = args.order_seed if args.order_seed is not None else secrets.randbits(32)
+        rng = random.Random(order_seed)
+    calib_points = shuffled_calibration_points(calibration_points(args.calib_margin), rng)
     retry_thr = resolve_retry_threshold(args.no_retry, args.retry_threshold_deg, args.max_hud_accuracy_deg)
 
     display_area = display_area_dict(eyetracker)
     screen = TargetScreen(monitor, pygame, args.font)
     calibration = None
     head_position = None
+    warmup = None
     try:
         if not args.skip_position_guide or args.position_only:
             head_position = run_position_guide(
@@ -530,8 +789,12 @@ def main(argv=None):
                       "結果は『不合格』として保存します。姿勢を直して、もう一度実行してください。")
         if not screen.message("検証：同じように点を見続けてください\n（何かキーを押すと開始 / ESC で中止）"):
             return
+        # 検証に使う（＝この後の試合で使う）較正。今回の較正が失敗した回は、装置に残っていた前回の較正になる
+        active_data, active_error = retrieve_calibration(eyetracker)
+        if not args.no_warmup:
+            warmup = run_warmup(tr, eyetracker, screen, display_area, args.shrink_sec, args.settle_ms, args.window_ms)
         points = run_validation(tr, eyetracker, screen, targets, display_area,
-                                args.shrink_sec, args.settle_ms, args.window_ms, retry_thr)
+                                args.shrink_sec, args.settle_ms, args.window_ms, retry_thr, rng)
     except KeyboardInterrupt:
         print("中止しました（保存しません）。")
         return
@@ -551,8 +814,18 @@ def main(argv=None):
         print(f"保存しました: {out}")
         return
 
-    verdict = judge(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg,
-                    calibration_ok=None if calibration is None else calibration["succeeded"])
+    # 今回の較正が成功した回だけ、較正データを JSON と同じ名前で保存する（apply_calibration.py で入れ直すため）
+    calib_data_file = None
+    if calibration is not None and calibration["succeeded"] and active_data:
+        calib_data_file = f"calib_{args.subject}_{stamp}.calibdata"
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        with open(args.output_dir / calib_data_file, "wb") as f:
+            f.write(active_data)
+    active_calibration = calibration_data_record(active_data, active_error, calib_data_file)
+    if active_error:
+        print(f"⚠ 較正データを取り出せませんでした（較正・検証の結果は保存します）: {active_error}")
+    verdict = summarize_verdict(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg,
+                                calibration_ok=None if calibration is None else calibration["succeeded"])
     verdict["retried_points"] = [p["label"] for p in points if p.get("retried")]
     out = args.output_dir / f"calib_{args.subject}_{stamp}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -569,29 +842,55 @@ def main(argv=None):
         "aoi_config": str(args.aoi) if args.aoi else None,
         "parameters": {"settle_ms": args.settle_ms, "window_ms": args.window_ms, "shrink_sec": args.shrink_sec,
                        "calib_margin": args.calib_margin, "calibration_points": calib_points,
-                       "retry_threshold_deg": retry_thr},
+                       "retry_threshold_deg": retry_thr,
+                       "presentation_order": {"randomized": not args.fixed_order, "seed": order_seed},
+                       "warmup": {"enabled": not args.no_warmup, "x": WARMUP_TARGET["x"], "y": WARMUP_TARGET["y"]}},
         "head_position": head_position,
         "definitions": {
             "accuracy_deg": "眼位置(gaze_origin)から注視点(gaze_point, UCS)へのベクトルと、目標点へのベクトルの角度差の平均",
             "precision_rms_s2s_deg": "連続サンプルの視線ベクトル間の角度差の二乗平均平方根",
             "binocular": "左右眼の値の平均（片眼のみ有効ならその眼の値）",
-            "passed": "全点平均 accuracy と AOI中心の各点の accuracy が閾値以内、かつ SDK の較正が失敗していない"
-                      "（calibration_ok=False なら不合格。None は較正なし＝--validate-only）",
+            "passed": "1.9.0 から summary.criteria_version の基準（両眼平均の視線で全点平均と HUD 各点〔credits を除く〕が閾値以内）"
+                      "かつ SDK の較正が失敗していない（calibration_ok=False なら不合格。None は較正なし＝--validate-only）。"
+                      "1.8.0 までの基準（左右眼の誤差の平均、credits を含む）の合否は passed_legacy。mean_accuracy_deg は左右眼の誤差の平均のまま",
             "valid_rate": "検証区間のサンプルのうち、その眼の gaze_point と gaze_origin が有効な割合（0件なら 0.0）",
             "bias_norm": "正規化座標上の平均ずれ（注視点平均 − 目標）。正の y は下方向",
-            "retried": "1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、データ品質（両眼の有効率の低い方 → precision）"
+            "binocular_avg": "左右眼の視線を平均してから求めた accuracy / precision / bias（解析の center_x/center_y と同じ作り方。"
+                             "片眼だけ有効なサンプルはその眼）。合否には使わない（1.4.0 で追加）",
+            "eye_xyz_mm": "検証区間内の眼の位置（UCS, mm。両眼の中点の平均、片眼のみならその眼）。head_position.recorded と同じ定義（1.4.0 で追加）",
+            "presentation_index": "検証の測定の提示の通し番号（0 始まり、測り直しを含む）。presentation_phase は first / retry。"
+                                  "first_attempt / retry_attempt にもそれぞれの値を残す（1.4.0 で追加）",
+            "points_used_by_sdk": "SDK の較正結果の点ごとの記録。1.6.0 から眼ごとのサンプル数（n_used：較正に使った、"
+                                  "n_valid_not_used：有効だが使わなかった＝視線が点から遠すぎた等、n_invalid：無効）、used_rate、"
+                                  "使ったサンプル・使わなかったサンプルの平均のずれ（*_offset_*_norm、サンプル − 較正点、正の y は下向き）。"
+                                  "ずれは補正を作ったデータに当てた値で精度の指標ではない。両眼の成功以外では空",
+            "validation_warmup": "1.7.0 から、検証の前に練習用の点（中央）を1回提示して測った結果。最初に提示した点の誤差が"
+                                 "大きくなる傾向への対策で、合否・全体平均・validation_points・presentation_index・点の順番の乱数には"
+                                 "使わない（--no-warmup なら null）",
+            "active_calibration": "1.8.0 から、検証を始める時点で装置が使っていた較正データの SHA-256 と大きさ。今回の較正が成功した回は "
+                                  "データを file（JSON と同じフォルダ）に保存し、apply_calibration.py で入れ直せる。較正が失敗した回と "
+                                  "--validate-only は保存せず、装置に残っていた較正の SHA-256 だけを記録する（試合後の検証では、試合で "
+                                  "使った較正と一致するかの確認に使う）",
+            "presentation_order": "1.5.0 から、較正点は中央を最初に固定して残り8点を、検証点は1周目・測り直しとも全点を、"
+                                  "乱数シード seed でランダムな順に提示する（randomized=false は --fixed-order＝1.4.0 以前の固定の順番）。"
+                                  "parameters.calibration_points は実際の提示順。validation_points は提示順にかかわらず一覧の順に並べる",
+            "retried": "1.9.0 から測り直しの判定は両眼平均の視線の accuracy。1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、データ品質（両眼の有効率の低い方 → precision）"
                        "が良い方を採用（accuracy は採否に使わない）。両方を first_attempt / retry_attempt に残す",
         },
         "calibration": calibration if calibration else {"status": "not_performed (--validate-only)"},
         "validation_points": points,
+        "validation_warmup": warmup,
+        "active_calibration": active_calibration,
         "summary": verdict,
     }
     with open(out, "w", encoding="utf-8") as f:
         json.dump(record, f, ensure_ascii=False, indent=2)
-    print(f"\n全体平均 accuracy: {verdict['mean_accuracy_deg']}  precision: {verdict['mean_precision_rms_s2s_deg']}")
+    mean_bin = verdict["mean_accuracy_binocular_deg"]
+    print(f"\n全体平均 accuracy（両眼平均の視線）: {'—' if mean_bin is None else f'{mean_bin:.2f}°'}"
+          f"  （左右眼の誤差の平均: {verdict['mean_accuracy_deg']}）  precision: {verdict['mean_precision_rms_s2s_deg']}")
     if verdict["calibration_ok"] is False:
         print("判定: 不合格（キャリブレーションの失敗。精度の値は前回の較正によるもの）")
-    print(f"判定: {'合格' if verdict['passed'] else '不合格'}  HUD点の不合格: {verdict['hud_points_failed']}"
+    print(f"判定（{verdict['criteria_version']}）: {'合格' if verdict['passed'] else '不合格'}  HUD点の不合格: {verdict['hud_points_failed']}"
           f"  測り直した点: {verdict['retried_points']}")
     print(f"保存しました: {out}")
 

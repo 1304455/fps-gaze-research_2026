@@ -18,6 +18,14 @@
   horizontal_scale_pct / horizontal_offset_deg   横方向の同じ量
   top_bar_bias_y_deg      上部HUD（AOI中心の検証点で target_y < 0.2）の縦のずれの平均。正 = 下向き（中央寄り）
   bottom_bar_bias_y_deg   下部HUD（target_y > 0.8）の縦のずれの平均。負 = 上向き（中央寄り）
+  eye_z_shift_mm / eye_y_shift_mm   検証点ごとの眼の位置（calibrate_validate 1.4.0 の eye_xyz_mm）の中央値 −
+                          頭部位置ガイド確定時の位置。正の z = 遠ざかった、負 = 前に出た。正の y = 上へ（UCS）
+  eye_z_range_mm / eye_y_range_mm   検証点の間での眼の位置の幅（最大 − 最小）。1.3.0 以前の JSON では空
+  passed_current_criteria / mean_accuracy_binocular_deg   1.9.0 の合否の基準（両眼平均の視線、credits を除く）で
+                          calib JSON から計算し直した合否と全点平均。1.4.0 より前の JSON（両眼平均の視線が無い）では空。
+                          passed は JSON に記録された合否（1.8.0 以前は旧基準）、criteria_version はその基準の版
+  calib_min_used_rate / calib_min_used_point   較正点ごと・眼ごとに、SDK が較正に使ったサンプルの割合の最小値と、
+                          その点（calib_<x>_<y>_<eye>）。低い点は較正中にその点を見ていなかった可能性。1.5.0 以前の JSON では空
 ずれは左右眼の bias_*_norm の平均（片眼のみなら片眼）。度への換算は atan(ずれ[mm] / 眼−トラッカー距離)。
 
 使い方（PowerShell。ワイルドカードはスクリプト側で展開する）
@@ -45,6 +53,14 @@ if str(_AOI_DIR) not in sys.path:
 
 from aoi_geometry import display_tilt_in_ucs_deg, eye_mean  # noqa: E402
 
+_GAZE_DIR = Path(__file__).resolve().parent.parent / "gaze_estimation"
+if str(_GAZE_DIR) not in sys.path:
+    sys.path.insert(0, str(_GAZE_DIR))
+
+from calibrate_validate import (  # noqa: E402
+    CRITERIA_VERSION, DEFAULT_MAX_HUD_ACCURACY_DEG, DEFAULT_MAX_MEAN_ACCURACY_DEG, judge_binocular,
+)
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_OUT = _PROJECT_ROOT / "data" / "processed" / "calib_compare" / "calib_compare.csv"
 DEFAULT_DISTANCE_MM = 650.0
@@ -53,9 +69,9 @@ BOTTOM_BAR_MIN_Y = 0.8
 
 PRINT_COLUMNS = [
     "file", "calib_margin", "display_angle_deg", "display_width_mm", "mean_accuracy_deg",
-    "hud_max_accuracy_deg", "passed", "vertical_scale_pct", "horizontal_scale_pct",
+    "hud_max_accuracy_deg", "passed", "passed_current_criteria", "vertical_scale_pct", "horizontal_scale_pct",
     "top_bar_bias_y_deg", "bottom_bar_bias_y_deg", "left_mean_accuracy_deg", "right_mean_accuracy_deg",
-    "n_retried", "head_z_mm",
+    "n_retried", "head_z_mm", "eye_z_shift_mm", "eye_y_shift_mm",
 ]
 GROUP_COLUMNS = [
     "mean_accuracy_deg", "hud_max_accuracy_deg", "vertical_scale_pct", "horizontal_scale_pct",
@@ -106,6 +122,50 @@ def bias_norm_to_deg(bias_norm: float, size_mm: "float | None", distance_mm: flo
     if size_mm is None or math.isnan(bias_norm):
         return float("nan")
     return math.degrees(math.atan(bias_norm * size_mm / distance_mm))
+
+
+def eye_drift(points: list[dict], head: dict) -> dict:
+    """
+    検証中の頭の動き：検証点ごとの眼の位置（eye_xyz_mm、1.4.0 以降）の中央値とガイド確定時の差、点の間での幅。
+    眼の位置が無い（1.3.0 以前）ときは NaN。
+    """
+    xyz = np.array([p["eye_xyz_mm"] for p in points if p.get("eye_xyz_mm") is not None], dtype=float).reshape(-1, 3)
+    out = {k: float("nan") for k in ("eye_z_shift_mm", "eye_y_shift_mm", "eye_z_range_mm", "eye_y_range_mm")}
+    if not len(xyz):
+        return out
+    out["eye_z_range_mm"] = float(xyz[:, 2].max() - xyz[:, 2].min())
+    out["eye_y_range_mm"] = float(xyz[:, 1].max() - xyz[:, 1].min())
+    if head.get("z_mid_mm") is not None:
+        out["eye_z_shift_mm"] = float(np.median(xyz[:, 2]) - head["z_mid_mm"])
+    if head.get("y_mid_mm") is not None:
+        out["eye_y_shift_mm"] = float(np.median(xyz[:, 1]) - head["y_mid_mm"])
+    return out
+
+
+def current_criteria(points: list[dict], calibration: dict) -> dict:
+    """1.9.0 の合否の基準で計算し直した合否と全点平均。両眼平均の視線が無い JSON（1.4.0 より前）は None。"""
+    if not points or any("binocular_avg" not in p for p in points):
+        return {"passed_current_criteria": None, "mean_accuracy_binocular_deg": None}
+    validate_only = str((calibration or {}).get("status") or "").startswith("not_performed")
+    ok = None if validate_only else (calibration or {}).get("succeeded")
+    v = judge_binocular(points, DEFAULT_MAX_MEAN_ACCURACY_DEG, DEFAULT_MAX_HUD_ACCURACY_DEG, calibration_ok=ok)
+    return {"passed_current_criteria": v["passed"], "mean_accuracy_binocular_deg": v["mean_accuracy_binocular_deg"]}
+
+
+def calib_point_usage(calibration: dict) -> dict:
+    """
+    SDK の較正結果（calibrate_validate 1.6.0 の points_used_by_sdk）で、較正に使ったサンプルの割合が
+    最も低い較正点と眼。記録が無い（1.5.0 以前、--validate-only、両眼の成功以外）ときは NaN / None。
+    """
+    worst = None
+    for p in (calibration or {}).get("points_used_by_sdk") or []:
+        for eye in ("left", "right"):
+            rate = p.get(f"{eye}_used_rate")
+            if rate is not None and (worst is None or rate < worst[0]):
+                worst = (rate, f"calib_{p['x']:.2f}_{p['y']:.2f}_{eye}")
+    if worst is None:
+        return {"calib_min_used_rate": float("nan"), "calib_min_used_point": None}
+    return {"calib_min_used_rate": worst[0], "calib_min_used_point": worst[1]}
 
 
 def summarize_calib(calib: dict, name: str = "") -> dict:
@@ -159,6 +219,10 @@ def summarize_calib(calib: dict, name: str = "") -> dict:
         "horizontal_offset_deg": bias_norm_to_deg(h_off, w_mm, dist),
         "top_bar_bias_y_deg": bias_norm_to_deg(float(np.nanmean(top)), h_mm, dist) if top else float("nan"),
         "bottom_bar_bias_y_deg": bias_norm_to_deg(float(np.nanmean(bottom)), h_mm, dist) if bottom else float("nan"),
+        **eye_drift(pts, head),
+        **calib_point_usage(calibration),
+        **current_criteria(pts, calibration),
+        "criteria_version": summ.get("criteria_version"),
     }
     for eye in ("left", "right"):
         accs = [(p.get(eye) or {}).get("accuracy_deg") for p in pts]

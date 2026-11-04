@@ -292,7 +292,181 @@ python .\src\gaze_estimation\calibrate_validate.py --subject TEST --validate-onl
 >       合否と、誤差 1.5° 超かつ precision 0.8 超の点の数、ずれと次の点の向きの一致を見る
 > - [ ] B.（A でも先読みが残る場合）`--settle-ms 200` だけ変える。採用するなら検証手順の変更なので、全員・実験者の基準を同じ値にそろえる（要相談）
 > - [ ] C. 較正の直後に `--validate-only` をもう1回。2回の検証で上段のずれが変われば検証のときの問題（頭・注視）、同じなら較正の問題
-> - [ ] `calib_PL01_20261029_155725.json`（実験者）を `data\raw\_excluded\` に移し、理由を同じフォルダの README.txt に書く（10/29 決定。中身は変えず、ワイルドカードや `Select-Object -Last 1` に拾われないようにする）
+> - [x] `calib_PL01_20261029_155725.json`（実験者）を `data\raw\_excluded\` に移し、理由を同じフォルダの README.txt に書く（10/30 移動済み）（10/29 決定。中身は変えず、ワイルドカードや `Select-Object -Last 1` に拾われないようにする）
+> - 先読みの判定はリポジトリの `src\analysis\calib_anticipation.py` で行う（10/30。一時スクリプトと同じ判定。1.4.0 の JSON では記録した提示順を使う）。
+>   C の判定は `calib_compare.py` の `eye_z_shift_mm` / `eye_y_shift_mm`（検証中の眼の位置 − ガイド確定時）も見る
+
+#### 2026-10-30：calibrate_validate 1.4.0（F1・F6、記録の追加のみ。凍結前に研究室PCで確認）
+
+検証点ごとに `eye_xyz_mm`（区間内の眼の位置。`head_position.recorded` と同じ定義）と `binocular_avg`（左右眼の視線を平均してから
+求めた accuracy / precision / bias。解析の `center_x` と同じ作り方。**合否には使わない**）を、各測定に `presentation_index`
+（提示の通し番号）と `presentation_phase`（first / retry）を追加した。既存のキーと値、合否の判定は変えていない。
+
+```powershell
+git pull
+python -m pytest
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python .\src\analysis\calib_compare.py $calib --group-by none
+python .\src\analysis\calib_anticipation.py $calib
+```
+- [x] `python -m pytest` が全件 passed
+- [x] 較正＋検証が 1.3.0 と同じように最後まで動き、`script.version` が `1.4.0`
+- [x] JSON の各検証点に `eye_xyz_mm`（z が 600〜700 mm 程度）、`binocular_avg`、`presentation_index`、`presentation_phase` がある
+- [x] `presentation_index` が 1周目は 0 から一覧の順、測り直しの点はその続きの番号（`first_attempt` / `retry_attempt` にも番号がある）
+      → 10/30 の較正の回は測り直し0点だったので、`--validate-only --retry-threshold-deg 0`（全点を測り直す）で確認した（順番どおり）
+- [x] `calib_compare` の `eye_z_shift_mm` / `eye_y_shift_mm` に値が入る（予想の「数 mm」より大きかった。下の結果）
+- [x] `calib_anticipation` の見出しが「提示順: 記録」になる
+
+> 2026-10-30 の結果（`calib_TEST_20261030_093539`、実験者本人、標準姿勢で較正＋検証1回）：合格。平均 0.64°、precision 0.18°、
+> HUD 最大 1.10°（ammo_weapon）、測り直し0点、`display_angle_deg` 12.0、上のバー −0.01°・下のバー −0.68°、`vertical_scale_pct` 2.9%。
+> 先読みの診断：ずれ 1.5° 超の点は0点（全17点）。
+> 眼の位置：ガイド確定時 z 671.9 / y −43.1 mm に対し、検証点の中央値は **z −19.5 mm（前に出た）**、y −4.6 mm。点の間の幅は z 24.7 mm、y 9.9 mm。
+> 解釈：実験者でも、ガイドの確定から検証までの間に約 2 cm 前に出ている（それでも合格）。「数 mm 程度」という事前の予想は外れた。
+> そのため、協力者の手順 C で「頭が動いた」と判断する基準は絶対値ではなく、実験者の同じ値（この回は z −19.5 mm）との比較で見る。
+> 点ごとの眼の位置（提示順、x / y / z mm）：0 番 grid_0.1_0.1 で z 673（ガイド確定時と同じ）→ 1 番で 657 → 以後ゆっくり下がり、最後の4点は 649〜652。
+> z は目標の上下に依存しない（同じ時間帯の上部 HUD 648〜652、下部 HUD 649〜652）→ **z のずれは姿勢（前傾）で、注視方向による推定の変化ではない**。
+> 1点目の直後に約 16 mm 前に出て、その後 約 8 mm ゆっくり前に出た。
+> x は目標が右ほど大きい（左列 7〜10、右列 11〜14 mm）。y は同じ時間帯で上部 HUD −47、下部 HUD −50〜−51 mm
+> → x・y には注視方向による数 mm の成分が入る。`eye_x/y` の 5 mm 程度までの差は頭の移動とみなさない。弱点：実験者1回のみ
+- [x] 確認できたら凍結（10/31）。以後の計測側の変更は不具合修正のみ（10/30 に全項目を確認）
+
+#### 2026-10-30：calibrate_validate 1.5.0（F4、点の提示順のランダム化。凍結前に研究室PCで確認）
+
+決定（CLAUDE.md §2「較正・検証の点の提示順」）：較正点は中央を最初に固定して残り8点、検証点は1周目・測り直しとも全点をランダムな順に出す。
+シードは毎回自動で決めて `parameters.presentation_order.seed` に記録（`--order-seed` で再現、`--fixed-order` で 1.4.0 以前と同じ固定の順番）。
+`validation_points` の並びは一覧の順のまま（比較ツールとの互換）。実際の提示順は `presentation_index` と `parameters.calibration_points`。
+
+```powershell
+git pull
+python -m pytest
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); print(d['script']['version'], d['parameters']['presentation_order'], d['parameters']['calibration_points']); [print(p['presentation_index'], p['label']) for p in sorted(d['validation_points'], key=lambda p: p['presentation_index'])]" $calib
+python .\src\analysis\calib_compare.py $calib --group-by none
+```
+- [ ] `python -m pytest` が全件 passed
+- [ ] 較正の点が中央の後、毎回違う順番で出る（目視）。検証の点も毎回違う順番で出る
+- [ ] JSON の `script.version` が `1.5.0`、`parameters.presentation_order` が `randomized: true` とシードの数値
+- [ ] `parameters.calibration_points` の最初が `[0.5, 0.5]` で、残りの順番が一覧の順と違う
+- [ ] `presentation_index` の順に並べた検証点が、実際に出た順と一致する（目視で最初の数点）
+- [ ] 実験者の結果（平均 accuracy、HUD 最大）が 10/30 の 1.4.0 の回（0.64°、1.10°）と大きく違わない（順番を変えても実験者の精度は変わらないはず）
+- [ ] 確認できたら凍結。PL01 の手順 A・C は 1.5.0 で行う（順番のランダム化と説明の両方が入った状態での確認になる）
+
+#### 2026-10-30：calibrate_validate 1.6.0（F2、SDK の較正結果の記録の追加のみ。凍結前に研究室PCで確認）
+
+`calibration.points_used_by_sdk` の各点に、眼ごとのサンプル数（`n_used`：較正に使った／`n_valid_not_used`：有効だが使わなかった
+＝SDK の説明では「視線が点から遠すぎた」など／`n_invalid`：無効）、`used_rate`、使った・使わなかったサンプルの平均のずれ
+（`*_offset_*_norm`）を追加した（既存の `x`・`y` は残す）。属性名は tobii-research 2.1.0 のソースで確認
+（公式サイトはこの環境から開けなかった）。読み取りに失敗しても較正は止めず `calibration.points_detail_error` に記録する。
+ずれは補正を作ったデータに当てた値なので精度の指標ではなく、どの較正点がおかしかったかを見るためのもの。
+`calib_compare` に `calib_min_used_rate` / `calib_min_used_point`（使ったサンプルの割合が最も低い較正点と眼）を追加。
+
+```powershell
+git pull
+python -m pytest
+pip show tobii-research
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python -c "import json,sys; c=json.load(open(sys.argv[1],encoding='utf-8'))['calibration']; print('error:', c.get('points_detail_error')); [print(p['x'], p['y'], p.get('n_samples'), *[p.get(f'{e}_{k}') for e in ('left','right') for k in ('n_used','n_valid_not_used','n_invalid','n_unknown_validity')]) for p in c['points_used_by_sdk']]" $calib
+python .\src\analysis\calib_compare.py $calib --group-by none
+```
+- [x] `python -m pytest` が全件 passed、`pip show tobii-research` は **2.1.0**（属性名を確かめたソースと同じ版）
+- [x] `script.version` が `1.6.0`、`points_detail_error` が `None`
+- [x] 較正点 9 点それぞれに `n_samples` と眼ごとの数がある。`n_unknown_validity` が 0
+- [x] 実験者の標準姿勢なら、ほとんどの点で `n_used` が `n_samples` に近い（全点・両眼で使用）
+- [x] `calib_compare` の `calib_min_used_rate` / `calib_min_used_point` に値が入る（全点 1.0 のときは最初の点が表示される）
+
+> 2026-10-30 の結果（`calib_TEST_20261030_122239`、実験者本人、標準姿勢、1.6.0、提示順ランダム シード 1988376421）：
+> - **SDK が返す較正サンプルは各点・各眼 1 個だけ**（`n_samples` = 1）。想定していた「点ごとに多数のサンプル」ではなかった。
+>   そのため `used_rate` は 0 か 1 にしかならず、「その点のサンプルの一部を捨てた」という段階的な情報は得られない。分かるのは、点・眼ごとに使われたか否かと、その1個の位置だけ
+> - その1個の位置のずれは多くの点で 0.3〜1.2° だったが、右眼の (0.9, 0.1) だけ 6.9°（それでも「使用」）。一方、検証の `grid_0.9_0.1` の右眼は 0.85° で、この大きなずれは検証の精度に現れていない。
+>   この1個が何を表すか（集めたデータの代表値か、補正後の位置か）は SDK のソースからは分からず、**ずれの値は解釈しない**（未確認）
+> - 判定：**不合格**（平均 0.79°、HUD の不合格は abilities 1.66°）。abilities は**最初に提示された点**（presentation_index 0）で、測り直し（17 番目）では 0.81°。
+>   測り直しの採否はデータ品質（precision：1回目 0.14 / 測り直し 0.20）で1回目が採用された（accuracy で選ばない設計どおり）
+> - 1回目の abilities は左右とも上（中央）向きにずれ（左眼 bias_y −0.068、右眼 −0.043）、precision は小さい（目は止まっていた）
+> - 眼の位置：ガイド確定時 z 664.8 mm に対し検証点の中央値 −11.6 mm、点の間の幅 14.1 mm
+> 2026-10-30 の追加（実験者本人、1.6.0、提示順ランダム、`123130`・`124335`・`133152` の3回、上の `122239` と合わせて4回）：
+>
+> | 回 | 合否 | 平均 accuracy | 最初に出た点 | その点の誤差（1回目） | 同じ点の他の回 | 17点中の順位（悪い方から） |
+> |---|---|---|---|---|---|---|
+> | 122239 | 不合格（abilities） | 0.79° | abilities | 1.66° | 0.42〜0.86° | 1位 |
+> | 123130 | 合格 | 0.83° | enemy_team_status | 1.13° | 0.66〜0.86° | 4位 |
+> | 124335 | 合格（測り直し1点） | 0.66° | enemy_team_status | 0.66° | 0.66〜1.13° | 7位 |
+> | 133152 | 合格 | 0.77° | minimap | 1.11° | 0.43〜1.47° | 3位 |
+>
+> - 最初に出た点は4回中3回で、その回の悪い方から4位以内（でたらめなら平均 9位）。最初の3点の平均誤差は、4回中3回で残りの点より大きい（0.89 / 0.96 / 0.94° vs 0.77 / 0.80 / 0.73°）
+> - **「最初の点が悪くなる」を支持する**が、4回・実験者1人で、効果の大きさは +0.3〜1.0° と回によって違う。最初の点の前の画面は中央に説明文が出ている（その直後の点になる）
+> - 実験者の平均 accuracy はランダムな順番で 0.66〜0.83°（固定の順番の 10/28・10/30 は 0.64〜0.76°）。わずかに悪いが、回数が少なく差は判断できない
+> - F2：較正サンプルは4回とも各点・各眼1個。その位置のずれは、**左眼の左上 (0.1, 0.1) が 2.0〜4.4°、右眼の右上 (0.9, 0.1) が 1.2〜6.9° と4回とも大きく**、それ以外の点・眼はほぼ 1.5° 以下。
+>   上の隅で、その隅と同じ側の眼だけが大きい（トラッカーが下にあり、上の隅は視線の角度が最も大きい）。検証でも左眼の `grid_0.1_0.1` は 4回中3回で 1.4〜1.8°（右眼は 0.2〜0.7°）。
+>   ただし右眼の右上の大きなずれは、検証の右眼（0.3〜0.9°）には現れていない。1個のサンプルの意味は未確認なので、**ずれの大きさは解釈せず、「上の隅の同じ側の眼」という傾向の目印として使う**。両眼平均の視線（`binocular_avg`）では `grid_0.1_0.1` は 0.25〜0.97°
+> - **仮説（未検証）：最初に提示した点が悪くなる**。PL01（固定の順番で最初の点は毎回 `grid_0.1_0.1`）でも、5回中4回で最初の点の1回目が 1.5° を超えていた。
+>   ただし PL01 では場所（左上）と先読みが重なり、実験者は1回だけなので区別できない。確かめ方：ランダムな順番の回を重ね、最初に出た点の1回目の誤差が、同じ点が別の順番で出たときより悪いかを見る
+- [ ] 確認できたら凍結。PL01 の手順 A・C は 1.6.0 で行う
+
+#### 2026-10-30：calibrate_validate 1.7.0（検証の前の練習用の点。凍結前に研究室PCで確認）
+
+決定（CLAUDE.md §2「検証の練習用の点」）：検証の前に中央に練習用の点を1回出し、`validation_warmup` に記録する（合否・全体平均・
+`validation_points`・`presentation_index`・乱数には使わない）。`parameters.warmup.enabled` に有無を残す（`--no-warmup` で出さない）。
+
+```powershell
+git pull
+python -m pytest
+python .\src\gaze_estimation\calibrate_validate.py --subject TEST --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$calib = (Get-ChildItem .\data\raw\calib_TEST_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); w=d['validation_warmup']; print(d['script']['version'], d['parameters']['warmup'], w['label'], round(w['accuracy_deg'],2)); f=[p for p in d['validation_points'] if (p.get('first_attempt') or p)['presentation_index']==0][0]; print('最初の点', f['label'], round((f.get('first_attempt') or f)['accuracy_deg'],2), '合否', d['summary']['passed'])" $calib
+python .\src\analysis\calib_compare.py $calib --group-by none
+```
+- [x] `python -m pytest` が全件 passed
+- [x] 検証の開始直後に中央の点が1回出てから、ランダムな順番の点が始まる（目視）
+- [x] `script.version` が `1.7.0`、`validation_warmup` に中央の点の結果があり、`validation_points` は 17 点のまま
+- [x] `calib_compare` が今までどおり動く（練習用の点は集計に入らない）
+- [ ] 確認できたら凍結し、main への PR を作る（10/30 研究室PCで上の項目を確認済み。凍結・PR は未）
+- [ ] 効果の確認（凍結後でよい）：1.7.0 の回を重ね、最初の点（presentation_index 0）の1回目の誤差がその回の他の点より悪い傾向が消えたかを見る（10/30 の4回：悪い方から 1・4・7・3 位）
+
+#### 2026-10-30：calibrate_validate 1.8.0 と apply_calibration 1.0.0（較正データの保存と入れ直し。凍結前に研究室PCで確認）
+
+決定（CLAUDE.md §2「較正が不合格だった参加者」）：3回とも不合格なら、案1の規則で一番良い回の較正を入れ直して試合をする。
+1.8.0 は較正が成功した回の較正データを `calib_<ID>_<日時>.calibdata` に保存し、どの回でも検証を始める時点の装置の較正の
+SHA-256 を `active_calibration` に記録する。`apply_calibration.py` は規則で回を選び、入れ直して SHA-256 で一致を確かめ、
+`calibapply_<ID>_<日時>.json` に残す。別のアイトラッカーの較正は入れ直さない（シリアル番号）。ETM の画面設定が違えば警告。
+
+確認（実験者で、較正＋検証を2回 → 1回目の較正を入れ直す → 検証のみ、で入れ直しが効くかを見る）：
+```powershell
+git pull
+python -m pytest
+python .\src\gaze_estimation\calibrate_validate.py --subject TESTAPPLY --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+python .\src\gaze_estimation\calibrate_validate.py --subject TESTAPPLY --calib-margin 0.1 --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+Get-ChildItem .\data\raw\calib_TESTAPPLY_*
+$first = (Get-ChildItem .\data\raw\calib_TESTAPPLY_*.json | Sort-Object LastWriteTime | Select-Object -First 1).FullName
+python .\src\gaze_estimation\apply_calibration.py $first
+python .\src\gaze_estimation\calibrate_validate.py --subject TESTAPPLY-post --validate-only --reference .\data\raw\headpos_STANDARD_20261013_132612.json
+$post = (Get-ChildItem .\data\raw\calib_TESTAPPLY-post_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+python -c "import json,sys; a=json.load(open(sys.argv[1],encoding='utf-8'))['active_calibration']['sha256']; b=json.load(open(sys.argv[2],encoding='utf-8'))['active_calibration']['sha256']; print('一致' if a==b else '不一致', a[:12], b[:12])" $first $post
+python .\src\gaze_estimation\apply_calibration.py (Get-ChildItem .\data\raw\calib_TESTAPPLY_*.json).FullName --dry-run
+```
+- [ ] `python -m pytest` が全件 passed
+- [ ] 2回とも `calib_TESTAPPLY_<日時>.json` と同名の `.calibdata` ができ、JSON の `active_calibration` に `sha256`・`file` がある（2回の sha256 は違う値）
+- [ ] `apply_calibration.py $first` が「入れ直し: 成功（SHA-256 一致）」と出て、`calibapply_TESTAPPLY_*.json` ができる
+- [ ] 入れ直した後の検証のみ（`-post`）の `active_calibration.sha256` が1回目と一致する（＝装置の較正が1回目に戻った）
+- [ ] `--dry-run` で2回のうち規則どおりの回が選ばれる
+- [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main への PR は未）
+
+#### 2026-10-30：calibrate_validate 1.9.0（合否の基準を両眼平均の視線・credits 除外に。1.8.0 の確認と同じ日に）
+
+決定（CLAUDE.md §2 除外基準）：両眼平均の視線で全点平均 ≤ 1.0° かつ HUD 各点（credits を除く）≤ 1.5°。測り直しの判定も両眼平均の視線。
+`summary.passed` は新基準、`summary.passed_legacy` は旧基準、`summary.criteria_version` に基準の版。
+`calib_compare` の `passed_current_criteria` は 1.4.0 以降の JSON から新基準の合否を計算し直す。集計（qc_report）に `calibration_criteria_version` を追加。
+
+1.8.0 の確認（上の節）で作った `calib_TESTAPPLY_*.json` をそのまま使う（1.9.0 に `git pull` してから上の節を実行すれば両方を一度に確認できる）：
+```powershell
+python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_TESTAPPLY_*.json).FullName --group-by none
+```
+- [ ] 画面の最後に「判定（v2-binocular-no-credits-20261030）: 合格／不合格」と、両眼平均の視線の全体平均が出る
+- [ ] JSON の `summary` に `passed`・`passed_legacy`・`criteria_version`・`mean_accuracy_binocular_deg` がある
+- [ ] `calib_compare` の `passed` と `passed_current_criteria` が一致する（1.9.0 の回）
+- [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main への PR は未）
 
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
@@ -320,7 +494,7 @@ python -c "import pandas as pd, sys; d=pd.read_csv(sys.argv[1]); print(d[['left_
 > 同じ日の 5.1.1 で meta.json の `time_reference_notes` に `analysis_time_columns` を追加した（CSV は変わらない）。
 
 - [ ] 短い計測の `_meta.json` に `time_reference_notes.analysis_time_columns` がある
-- [ ] calibrate_validate（1.3.0）：ディスプレイ番号に `0` を入れると入力し直しになる（以前は最後の画面が選ばれていた）
+- [ ] calibrate_validate（1.3.0 以降）：ディスプレイ番号に `0` を入れると入力し直しになる（以前は最後の画面が選ばれていた）
 - [ ] calibrate_validate：保存された calib JSON の `summary.calibration_ok` が `true`（SDK 較正）／`null`（`--validate-only`）。
       較正が失敗した回は `false` で、精度によらず不合格になる
 
@@ -425,7 +599,29 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 > 2026-10-28：アンレートの予備実験は**未実施**（これから実施）。10/20 の TEST_player は実験者本人（ブロンズ3相当）。
 > 2026-10-30：ユーザーから**アンレートの予備実験は実施済み**と報告。ただし 10/30 時点で、結果（所要時間・較正・分析時間・区間付けの時間・下部HUD の Gaze %）はリポジトリのどのブランチにも記録されていない（2c の 10/28 配置の復旧、10/29 の PL01 の較正の件だけが記録されている）。数値が届いたらここに書く。
 
-- [ ] アンレートの予備実験を1試合通す（10/26 の週・11/2 の週）：所要時間（想定 95 分に収まるか）、生存中の分析時間（分析時間の下限を決める）、**区間付けの時間**（RUN_PIPELINE 6a の見積もり 40〜60 分と比べる）、試合後の検証（RUN_PIPELINE 2b）による精度の変化、**較正の回数**（不合格時の手順案は `docs/PENDING_DECISIONS.md` 2）、参加者のランク、下部HUDまとめ（health_armor＋abilities＋ammo_weapon）の Gaze %
+- [ ] アンレートの予備実験を1試合通す（10/26 の週・11/2 の週）：所要時間（想定 95 分に収まるか）、生存中の分析時間（分析時間の下限を決める）、**区間付けの時間**（RUN_PIPELINE 6a の見積もり 40〜60 分と比べる）、試合後の検証（RUN_PIPELINE 2b）による精度の変化、**較正の回数**（不合格時の手順案は `docs/PENDING_DECISIONS.md` 2）、参加者のランク、下部HUDまとめ（health_armor＋abilities＋ammo_weapon）の Gaze %（→ 11/04 に PL02 で通し済み：下の結果。区間付けの時間・ランク・分析時間の下限は未）
+
+> 2026-11-04 の結果（PL02、calibrate_validate 1.9.0 で、アンレート1試合の通し。区間付けの時間・参加者のランクは未報告）：
+> - 試合は 7 ラウンドで終了し、実験全体で約 20 分（改良前の試合は約 21 ラウンド・約 40 分）。アンレートでもラウンド数（＝分析時間）は試合ごとに大きく変わる
+> - 区間内のサンプル 21,413（**分析時間 約 357 秒**）、有効率 99.8%、offscreen 0.17%、AOI の外（outside）20.7%
+> - AOI ごとのサンプル（Gaze %）：crosshair 14,100（66.0%）、minimap 2,396（11.2%）、abilities 214（1.0%）、health_armor 62（0.29%）、
+>   ammo_weapon 52（0.24%）、round_timer 36（0.17%）、enemy_team_status 27（0.13%）、ally_team_status 12（0.06%）。上部の3つは合計 75 サンプル（1.25 秒）。下部HUDまとめ（health_armor＋abilities＋ammo_weapon）は 328 サンプル（1.53%）
+> - 下のバーに注視がある（重心 y ≥ 0.895 の注視 28 件、abilities・health_armor・ammo_weapon）。10/20 の実験者の試合（下のバー 0 件）とは違う
+> - AOI のすぐ上（y 0.87〜0.895）に注視が 4 件。下のバーは中央向き（上向き）に約 0.4〜0.7° ずれる既知の限界があり、下のバーを見ていても AOI の外と判定された可能性がある（案 C の AOI ごとの測定可否で確認する）
+> - 検証中の眼の位置のずれ `eye_z_shift_mm` = +23.0 mm（ガイド確定時より約 2.3 cm 遠い。実験者は 10/30 に −19.5〜+8.4 mm）
+> - 参加者は **PL02**（実験者・PL01 以外）。7 ラウンドで終わったのは**降参**による
+> - **較正は1回目で合格**（`calib_PL02_20261104_153146`、1.9.0 の基準。説明の読み上げ・提示順ランダム・練習用の点あり）：
+>   全点平均 0.63°（左右眼の誤差の平均）、HUD 最大 1.35°、測り直し3点、上のバー +0.24°・下のバー −0.20°、`vertical_scale_pct` 2.5%、左眼 0.75° / 右眼 0.51°
+> - 先読みの診断：ずれ 1.5° 超は 17 点中 1 点（ally_team_status、両眼平均のずれ +0.56 / +1.46°＝下向き、区間内で目は動いていない）。PL01（10/29）の 33 点とは大きく違う
+> - **試合後の検証**（`calib_PL02-post_20261104_155057`）：全点平均 0.53°、HUD 最大 0.87°、合格（記録のみ）。眼−トラッカー距離 696.8 mm（試合前のガイド確定時 667.8 mm より約 3 cm 遠い）。
+>   試合中に精度は落ちていない
+> - 解釈：他の人（PL02）でも、改良後の手順（1.9.0、説明の読み上げ）で1回目から合格できた。ただし1人だけで、10/29 に不合格だった PL01 本人ではないので、
+>   PL01 の不合格の原因（先読み）が改良で解消したことまでは確かめていない
+> - 案 C（AOI ごとの測定可否）の見込み：ally_team_status は両眼平均で下向きに約 1.5° ずれていて、上下の半分 0.91° を超える → 「測れていない」の印が付く見込み（試合中の ally は 12 サンプル）。
+>   下のバーのずれは −0.20° と小さく、AOI のすぐ上（y 0.87〜0.895）の注視 4 件をずれだけでは説明しにくい
+> - [ ] 試合前と試合後で `active_calibration.sha256` が一致するか（試合中も同じ較正だったか）を確認する
+> - [ ] 降参で試合が短く終わったときの扱い（分析時間の下限、もう1試合するか）を決める
+
 - [ ] 10/21 に crosshair を `radius_deg: 2.0` に変えたので、それより前に解析したセッションを ver3 の `--overwrite` 付きで解析し直す（AOI の中身の違いで上書き防止が働く）。集計は `--qc-criteria .\data\qc_criteria.json` を付ける（RUN_PIPELINE 手順8）
 - [x] 台帳の記入例の行を削除し、このセッションの行を書いて、ver3 と集計を `--overwrite` 付きで実行し直す（10/21、主解析）
       （台帳の行が `qc.json` の `manifest_row` と `resolution_check` に入り、`qc_report` の `calibration_passed` が埋まることを確認）
