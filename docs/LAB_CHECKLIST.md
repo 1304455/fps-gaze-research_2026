@@ -620,7 +620,7 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 > - 案 C（AOI ごとの測定可否）の見込み：ally_team_status は両眼平均で下向きに約 1.5° ずれていて、上下の半分 0.91° を超える → 「測れていない」の印が付く見込み（試合中の ally は 12 サンプル）。
 >   下のバーのずれは −0.20° と小さく、AOI のすぐ上（y 0.87〜0.895）の注視 4 件をずれだけでは説明しにくい
 > - [ ] 試合前と試合後で `active_calibration.sha256` が一致するか（試合中も同じ較正だったか）を確認する
-> - [ ] 降参で試合が短く終わったときの扱い（分析時間の下限、もう1試合するか）を決める
+> - [x] 降参で試合が短く終わったときの扱い → 11/05 決定：その場で交渉してもう1試合（CLAUDE.md §2、RUN_PIPELINE 2c）。分析時間の下限は未決
 
 - [ ] 10/21 に crosshair を `radius_deg: 2.0` に変えたので、それより前に解析したセッションを ver3 の `--overwrite` 付きで解析し直す（AOI の中身の違いで上書き防止が働く）。集計は `--qc-criteria .\data\qc_criteria.json` を付ける（RUN_PIPELINE 手順8）
 - [x] 台帳の記入例の行を削除し、このセッションの行を書いて、ver3 と集計を `--overwrite` 付きで実行し直す（10/21、主解析）

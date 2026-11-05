@@ -90,6 +90,26 @@ python .\src\analysis\calib_compare.py $calib $post --group-by none
 python -c "import json,sys; a=json.load(open(sys.argv[1],encoding='utf-8'))['active_calibration']['sha256']; b=json.load(open(sys.argv[2],encoding='utf-8'))['active_calibration']['sha256']; print('一致' if a==b else '不一致', a[:12], b[:12])" $calib $post
 ```
 
+### 2c. 降参で試合が終わったとき：もう1試合（2026-11-05 決定）
+
+降参（どちらのチームでも）で試合が終わったら、その場で参加者に**アンレートをもう1試合**してもらえるか交渉する。
+2試合目をしても断られても、1試合目のデータは捨てない（手順3〜7をそのまま行う）。
+
+- [ ] 1試合目の試合の終わり方を台帳の notes に書く：`surrender=1`（降参）／ `surrender=0`（通常どおり終了）
+- 断られたとき：notes に `trial2=declined`。ここで終了
+- 引き受けてもらえたとき：
+  1. 手順2b の試合後の検証（`${subj}-post`）の結果を見る。**合格なら較正し直さずに**2試合目へ（姿勢はそのまま、Spark は動かさない）。
+     不合格なら手順1（較正＋検証）からやり直す（`$calib` が新しい回になる）
+  2. 2試合目の計測は `--trial 2`：
+     ```powershell
+     python .\src\gaze_estimation\tobii_capture_with_sync_flash_v5.py --subject $subj --trial 2 --obs-config .\obs_config.json --max-duration 3600
+     ```
+  3. 2試合目の後の検証は subject を `${subj}-post2` にする（手順2b と同じコマンドの `-post` を `-post2` に）
+  4. 2試合目は**別のセッション**として手順3〜7を行い、台帳にもう1行書く（`participant_id` と `group` は1試合目と同じ。
+     `calibration_file` は2試合目の前に使った較正：較正し直さなかったら1試合目と同じ `$calib`）。notes に `trial=2; post=<post2 のファイル名>`
+  5. 2試合目も降参で終わっても、3試合目はしない（notes に `surrender=1`）
+- 集計（手順8）は、同じ `participant_id` の2試合を**サンプル数・時間を足してから**割合を出す（`participant_aoi_metrics.csv`、既存の動作）
+
 ## 3. ファイルの場所を変数にまとめる
 
 ```powershell
