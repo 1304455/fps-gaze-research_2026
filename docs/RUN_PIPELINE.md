@@ -343,7 +343,19 @@ python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.
 ## 終わったら
 
 次のファイルを Claude に渡し、結果を LAB_CHECKLIST に記録する（CLAUDE.md §6 の記録ルール）：
-- `qc.json`
-- v5 のログ
-- auto-sync の出力
-- 集計の `qc_report`
+
+| ファイル | 保存先（リポジトリ直下から） | ファイル名 |
+|---|---|---|
+| `qc.json` | `data\processed\aoi_result\<session_base>\` | `qc.json`（セッションごとに1つ） |
+| v5 のログ | `data\raw\`（視線 CSV と同じ場所） | `<session_base>_log.txt` と `<session_base>_obs_sync.jsonl`（OBS の録画開始・停止の記録） |
+| auto-sync の出力 | **録画の mp4 と同じフォルダ**（`data\` の外。例：`C:\Users\kawalab\Videos\`） | `<録画のファイル名>_sync.json`（手順3の `$sync`） |
+| 集計の `qc_report` | `data\processed\aggregate\` | `qc_report.csv` |
+
+- 感度分析（650 mm 固定）の結果は別の場所にある：`data\processed\aoi_result_fixed650\<session_base>\qc.json` と `data\processed\aggregate_fixed650\qc_report.csv`
+- `_sync.json` は `data\` の外にあるので、Videos フォルダを整理するときに一緒に消さない（ver3 の `--sync` が読む）
+
+4つがそろっているかの確認（手順3の `$base` と `$sync` が残っている PowerShell で）：
+```powershell
+Get-Item ".\data\processed\aoi_result\$base\qc.json", ".\data\raw\${base}_log.txt", ".\data\raw\${base}_obs_sync.jsonl", $sync, ".\data\processed\aggregate\qc_report.csv" | Format-Table FullName, Length, LastWriteTime -AutoSize
+```
+- どれかが無いとエラーが出る。無かった手順に戻る（`qc.json` → 手順7、`_sync.json` → 手順4、`qc_report.csv` → 手順8）
