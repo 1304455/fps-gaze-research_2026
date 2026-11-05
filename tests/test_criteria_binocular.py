@@ -55,7 +55,8 @@ def test_calib_compare_recomputes_current_criteria():
     r = current_criteria(PTS_CREDITS_ONLY_BAD, {"status": "calibration_status_success", "succeeded": True})
     assert r["passed_current_criteria"] is True and r["mean_accuracy_binocular_deg"] == pytest.approx(0.7)
     old = [{"label": "grid_0.5_0.5", "kind": "grid", "accuracy_deg": 0.5}]  # 1.4.0 より前
-    assert current_criteria(old, {}) == {"passed_current_criteria": None, "mean_accuracy_binocular_deg": None}
+    assert current_criteria(old, {}) == {"passed_current_criteria": None, "mean_accuracy_binocular_deg": None,
+                                         "n_points_changed_by_lapse_rule": None}
 
 
 def test_apply_calibration_uses_binocular_mean(tmp_path):

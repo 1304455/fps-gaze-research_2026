@@ -20,9 +20,14 @@ Tobii Pro SDK によるキャリブレーション＋検証ツール（IMPROVEME
   （眼−画面距離の近似を使わない）。
 - 結果を data/raw/calib_<subject>_<YYYYMMDD_HHMMSS>.json に保存
 
-合否（1.9.0、2026-10-30 決定、CRITERIA_VERSION）：両眼平均の視線（binocular_avg、解析の center_x と同じ作り方）で、
+合否（1.9.0、2026-10-30 決定）：両眼平均の視線（binocular_avg、解析の center_x と同じ作り方）で、
 全点平均 ≤ 1.0° かつ HUD の各点（credits を除く）≤ 1.5°。測り直しの判定も両眼平均の視線。
 1.8.0 までの判定（左右眼の誤差の平均、credits を含む）は judge() として残し、summary.passed_legacy に記録する。
+
+測り直しの採否（1.10.0、2026-11-05 決定、案B、CRITERIA_VERSION）：
+片方の回の誤差（両眼平均の視線）が --lapse-threshold-deg（既定 5°）を超え、もう片方が以下なら、以下の回を採る
+（目標を見ていなかった回＝見落としを採らない）。それ以外は 1.9.0 と同じくデータ品質（有効率 → precision）で採る。
+1.9.0 の採り方での合否は summary.passed_v2 に残す（PL03 の 11/05 の較正で、見落とした回が品質で採られた例による）。
 
 使い方（PowerShell）
 --------------------
@@ -65,16 +70,20 @@ for _p in (_SRC_DIR, _SRC_DIR / "aoi_detector"):
 
 from aoi_geometry import aoi_center  # noqa: E402
 
-SCRIPT_VERSION = "1.9.0"
+SCRIPT_VERSION = "1.10.0"
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "raw"
 DEFAULT_AOI_JSON = _SRC_DIR / "aoi_detector" / "valorant_hud_aoi_circular.json"
 DEFAULT_CALIB_MARGIN = 0.1
 DEFAULT_MAX_MEAN_ACCURACY_DEG = 1.0
 DEFAULT_MAX_HUD_ACCURACY_DEG = 1.5
-CRITERIA_VERSION = "v2-binocular-no-credits-20261030"
+DEFAULT_LAPSE_THRESHOLD_DEG = 5.0
+CRITERIA_VERSION = "v3-binocular-no-credits-lapse5-20261105"
+CRITERIA_VERSION_V2 = "v2-binocular-no-credits-20261030"
 CRITERIA_EXCLUDED_HUD = ("aoi_credits",)
-CRITERIA_TEXT = ("両眼平均の視線（binocular_avg）の accuracy で、全点平均 ≤ 閾値 かつ HUD の各点（credits を除く）≤ 閾値、"
-                 "かつ SDK の較正が失敗していない。credits は解析・考察から外す（2026-10-28）ため判定から外す")
+CRITERIA_TEXT_V2 = ("両眼平均の視線（binocular_avg）の accuracy で、全点平均 ≤ 閾値 かつ HUD の各点（credits を除く）≤ 閾値、"
+                    "かつ SDK の較正が失敗していない。credits は解析・考察から外す（2026-10-28）ため判定から外す")
+CRITERIA_TEXT = (CRITERIA_TEXT_V2 + "。測り直した点は、片方の回の誤差が lapse_threshold_deg を超え、もう片方が以下なら"
+                 "以下の回を採る（見落とした回を採らない。2026-11-05）。それ以外はデータ品質で採る")
 WARMUP_TARGET = {"label": "warmup_center", "kind": "warmup", "x": 0.5, "y": 0.5}
 GRID_VALIDATION_POINTS = [(0.1, 0.1), (0.5, 0.1), (0.9, 0.1), (0.1, 0.5), (0.5, 0.5),
                           (0.9, 0.5), (0.1, 0.9), (0.5, 0.9), (0.9, 0.9)]
@@ -172,16 +181,82 @@ def data_quality_key(attempt: dict) -> tuple:
     return (min(rates) if rates else 0.0, -(prec if prec is not None else float("inf")))
 
 
-def merge_retry(first: dict, retry: dict) -> dict:
+def lapse_choice(first_acc: "float | None", retry_acc: "float | None",
+                 threshold_deg: "float | None") -> "str | None":
     """
-    1回目と測り直しのうち、データ品質（data_quality_key）が良い方を採用する。
-    accuracy の良い方を選ぶと結果に都合のよい選別になるため、accuracy は判断に使わない。
-    品質が同じなら測り直しを採用する。両方の値を残し、どちらを採ったかを selected_attempt に記録する。
+    見落とした回を除く規則（1.10.0、案B）。片方の回の誤差が threshold_deg を超え、もう片方が以下なら、
+    以下の方（"first" / "retry"）を返す。両方以下・両方超・どちらかのデータが無い・threshold_deg が None なら None
+    （データ品質で決める）。誤差は両眼平均の視線の accuracy。
+    「良い方を選ぶ」のではなく「目標を見ていなかった方を除く」ための規則なので、もう片方には合格の閾値を求めない。
     """
-    use_first = data_quality_key(first) > data_quality_key(retry)
-    chosen = first if use_first else retry
-    return {**chosen, "retried": True, "selected_attempt": "first" if use_first else "retry",
+    if threshold_deg is None or first_acc is None or retry_acc is None:
+        return None
+    if first_acc > threshold_deg and retry_acc <= threshold_deg:
+        return "retry"
+    if retry_acc > threshold_deg and first_acc <= threshold_deg:
+        return "first"
+    return None
+
+
+def merge_retry(first: dict, retry: dict, lapse_threshold_deg: "float | None" = DEFAULT_LAPSE_THRESHOLD_DEG) -> dict:
+    """
+    1回目と測り直しのどちらを採るかを決める。
+    1. 見落とした回を除く規則（lapse_choice）が当てはまればそれに従う（selection_rule = "lapse"）
+    2. それ以外はデータ品質（data_quality_key）が良い方（selection_rule = "data_quality"）。
+       accuracy の良い方を選ぶと結果に都合のよい選別になるため、ここでは accuracy を使わない。品質が同じなら測り直し
+    1.9.0 の採り方（データ品質だけ）で選ばれる回を selected_attempt_data_quality に残す（1.9.0 の合否を計算し直すため）。
+    両方の値を first_attempt / retry_attempt に残す。
+    """
+    dq = "first" if data_quality_key(first) > data_quality_key(retry) else "retry"
+    lapse = lapse_choice(binocular_accuracy(first), binocular_accuracy(retry), lapse_threshold_deg)
+    selected = lapse or dq
+    chosen = first if selected == "first" else retry
+    return {**chosen, "retried": True, "selected_attempt": selected,
+            "selection_rule": "lapse" if lapse else "data_quality",
+            "selected_attempt_data_quality": dq,
             "first_attempt": _compact(first), "retry_attempt": _compact(retry)}
+
+
+def _with_attempt(point: dict, which: str) -> dict:
+    """
+    測り直した点を、記録された回（first_attempt / retry_attempt）の値に差し替えた写し（合否の計算し直し用）。
+    差し替えるのは合否に使う値（accuracy_deg / precision_rms_s2s_deg / binocular_avg の accuracy_deg）だけ。
+    """
+    att = point.get(f"{which}_attempt") or {}
+    q = dict(point)
+    q["accuracy_deg"] = att.get("accuracy_deg")
+    q["precision_rms_s2s_deg"] = att.get("precision_rms_s2s_deg")
+    q["binocular_avg"] = {**(point.get("binocular_avg") or {}), "accuracy_deg": att.get("binocular_avg_accuracy_deg")}
+    q["selected_attempt"] = which
+    return q
+
+
+def points_selected_by_data_quality(points: list[dict]) -> list[dict]:
+    """1.9.0 の採り方（データ品質だけ）で選んだ場合の検証点。1.9.0 以前の JSON はそのまま。"""
+    out = []
+    for p in points:
+        dq = p.get("selected_attempt_data_quality")
+        out.append(_with_attempt(p, dq) if p.get("retried") and dq and dq != p.get("selected_attempt") else p)
+    return out
+
+
+def points_selected_by_lapse_rule(points: list[dict],
+                                  threshold_deg: float = DEFAULT_LAPSE_THRESHOLD_DEG) -> "tuple[list[dict], list[str]]":
+    """
+    記録された1回目・測り直しの値（1.4.0 以降の JSON）に、見落とした回を除く規則を当てた検証点と、
+    採る回が変わった点のラベル。1.10.0 の JSON では既に当てているので変わらない（閾値が同じなら）。
+    """
+    out, changed = [], []
+    for p in points:
+        fa, ra = p.get("first_attempt") or {}, p.get("retry_attempt") or {}
+        lapse = (lapse_choice(fa.get("binocular_avg_accuracy_deg"), ra.get("binocular_avg_accuracy_deg"), threshold_deg)
+                 if p.get("retried") else None)
+        if lapse and lapse != p.get("selected_attempt"):
+            out.append(_with_attempt(p, lapse))
+            changed.append(p["label"])
+        else:
+            out.append(p)
+    return out, changed
 
 def display_point_to_ucs(x: float, y: float, display_area: dict) -> np.ndarray:
     """
@@ -312,9 +387,12 @@ def validation_targets(aois: "list[dict] | None", min_separation: float = 0.03) 
 
 def judge_binocular(points: list[dict], max_mean_acc: float, max_hud_acc: float,
                     calibration_ok: "bool | None" = None,
-                    excluded_hud: "tuple[str, ...]" = CRITERIA_EXCLUDED_HUD) -> dict:
+                    excluded_hud: "tuple[str, ...]" = CRITERIA_EXCLUDED_HUD,
+                    criteria_version: str = CRITERIA_VERSION, criteria_text: str = CRITERIA_TEXT) -> dict:
     """
-    1.9.0 の合否（CRITERIA_VERSION）：両眼平均の視線の accuracy で、全点平均と HUD の各点（excluded_hud を除く）を判定する。
+    1.9.0 以降の合否：両眼平均の視線の accuracy で、全点平均と HUD の各点（excluded_hud を除く）を判定する。
+    測り直した点のどちらの回を採るかは呼び出し側で決めておく（1.10.0 は見落としを除く規則、1.9.0 はデータ品質だけ）。
+    criteria_version / criteria_text はその採り方に合わせて記録する。
     両眼平均の視線が無い点（両眼とも無効、または 1.4.0 より前の JSON）は points_without_data に入れ、HUD の点なら不合格にする。
     """
     accs = [binocular_accuracy(p) for p in points]
@@ -325,8 +403,8 @@ def judge_binocular(points: list[dict], max_mean_acc: float, max_hud_acc: float,
     missing = [p["label"] for p in points if binocular_accuracy(p) is None]
     passed = mean_acc is not None and mean_acc <= max_mean_acc and not hud_fail and calibration_ok is not False
     return {
-        "criteria_version": CRITERIA_VERSION,
-        "criteria": CRITERIA_TEXT,
+        "criteria_version": criteria_version,
+        "criteria": criteria_text,
         "mean_accuracy_binocular_deg": mean_acc,
         "hud_points_failed": hud_fail,
         "hud_points_excluded_from_criteria": list(excluded_hud),
@@ -339,15 +417,30 @@ def judge_binocular(points: list[dict], max_mean_acc: float, max_hud_acc: float,
 
 
 def summarize_verdict(points: list[dict], max_mean_acc: float, max_hud_acc: float,
-                      calibration_ok: "bool | None" = None) -> dict:
+                      calibration_ok: "bool | None" = None,
+                      lapse_threshold_deg: "float | None" = DEFAULT_LAPSE_THRESHOLD_DEG) -> dict:
     """
-    calib JSON の summary。passed / hud_points_failed は 1.9.0 の判定（judge_binocular）。
-    1.8.0 までの判定（judge）は passed_legacy / hud_points_failed_legacy に残す。mean_accuracy_deg は従来どおり左右眼の誤差の平均。
+    calib JSON の summary。passed / hud_points_failed は 1.10.0 の判定（測り直しは見落としを除く規則で採った点で judge_binocular）。
+    1.9.0 の判定（データ品質だけで採った点）は passed_v2 / hud_points_failed_v2 / mean_accuracy_binocular_deg_v2 に残す。
+    1.8.0 までの判定（judge、データ品質だけで採った点）は passed_legacy / hud_points_failed_legacy に残す。
+    mean_accuracy_deg / mean_precision_rms_s2s_deg は従来どおり左右眼の誤差の平均（実際に採った点の値）。
     """
-    legacy = judge(points, max_mean_acc, max_hud_acc, calibration_ok=calibration_ok)
+    dq_points = points_selected_by_data_quality(points)
+    described = judge(points, max_mean_acc, max_hud_acc, calibration_ok=calibration_ok)
+    legacy = judge(dq_points, max_mean_acc, max_hud_acc, calibration_ok=calibration_ok)
+    v2 = judge_binocular(dq_points, max_mean_acc, max_hud_acc, calibration_ok=calibration_ok,
+                         criteria_version=CRITERIA_VERSION_V2, criteria_text=CRITERIA_TEXT_V2)
     current = judge_binocular(points, max_mean_acc, max_hud_acc, calibration_ok=calibration_ok)
-    return {**legacy, "passed_legacy": legacy["passed"], "hud_points_failed_legacy": legacy["hud_points_failed"],
-            **current}
+    return {**described, "passed_legacy": legacy["passed"], "hud_points_failed_legacy": legacy["hud_points_failed"],
+            **current,
+            "lapse_threshold_deg": lapse_threshold_deg,
+            "points_selected_by_lapse_rule": [p["label"] for p in points if p.get("retried")
+                                              and p.get("selection_rule") == "lapse"
+                                              and p.get("selected_attempt") != p.get("selected_attempt_data_quality")],
+            "criteria_version_v2": CRITERIA_VERSION_V2,
+            "passed_v2": v2["passed"],
+            "hud_points_failed_v2": v2["hud_points_failed"],
+            "mean_accuracy_binocular_deg_v2": v2["mean_accuracy_binocular_deg"]}
 
 
 def judge(points: list[dict], max_mean_acc: float, max_hud_acc: float,
@@ -565,7 +658,8 @@ def run_calibration(tr, eyetracker, screen: TargetScreen, shrink_sec: float,
 
 def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], display_area: dict,
                    shrink_sec: float, settle_ms: float, window_ms: float,
-                   retry_threshold_deg: "float | None" = None, rng: "random.Random | None" = None) -> list[dict]:
+                   retry_threshold_deg: "float | None" = None, rng: "random.Random | None" = None,
+                   lapse_threshold_deg: "float | None" = DEFAULT_LAPSE_THRESHOLD_DEG) -> list[dict]:
     """
     各検証点を提示して指標を出す。retry_threshold_deg を指定すると、閾値を超えた点
     （またはデータが取れなかった点）を最後にもう1回だけ提示し直す（1回目の値も記録する）。
@@ -574,6 +668,7 @@ def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], di
     ずれが次に提示した点の方向を向いているか（先読み）を、実装から推測せずに調べるため。
     rng を渡すと、1周目と測り直しの提示順をランダムにする（1.5.0。None なら 1.4.0 以前と同じ一覧の順）。
     戻り値は提示順にかかわらず targets と同じ並び（既存の比較ツールとの互換のため）。
+    測り直した点の採否は merge_retry（1.10.0：見落とした回を除く規則 → データ品質）。
     """
     collector = SampleCollector()
     eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA, collector.callback, as_dictionary=True)
@@ -605,7 +700,10 @@ def run_validation(tr, eyetracker, screen: TargetScreen, targets: list[dict], di
             if idx:
                 print(f"  --- 誤差が {retry_threshold_deg}° を超えた {len(idx)} 点をもう一度測ります ---")
                 for i in idx:
-                    results[i] = merge_retry(results[i], measure(targets[i], "retry"))
+                    results[i] = merge_retry(results[i], measure(targets[i], "retry"), lapse_threshold_deg)
+                    if results[i].get("selection_rule") == "lapse":
+                        print(f"  {targets[i]['label']:<28} 誤差が {lapse_threshold_deg}° を超えた回を除き、"
+                              f"{'1回目' if results[i]['selected_attempt'] == 'first' else '測り直し'}を採りました")
     finally:
         eyetracker.unsubscribe_from(tr.EYETRACKER_GAZE_DATA, collector.callback)
     return results
@@ -695,6 +793,11 @@ def main(argv=None):
     p.add_argument("--retry-threshold-deg", type=float, default=None,
                    help="検証で accuracy がこの値を超えた点を1回だけ測り直す（既定: --max-hud-accuracy-deg と同じ）")
     p.add_argument("--no-retry", action="store_true", help="検証点の測り直しをしない")
+    p.add_argument("--lapse-threshold-deg", type=float, default=DEFAULT_LAPSE_THRESHOLD_DEG,
+                   help="測り直した点で、片方の回の誤差がこの値を超え、もう片方が以下なら以下の回を採る"
+                        "（見落とした回を採らない。既定: 5.0。1.10.0）")
+    p.add_argument("--no-lapse-rule", action="store_true",
+                   help="見落とした回を除く規則を使わず、1.9.0 と同じくデータ品質だけで採る")
     p.add_argument("--no-warmup", action="store_true",
                    help="検証の前の練習用の点（中央、判定には使わない）を出さない（1.6.0 以前と同じ）")
     p.add_argument("--fixed-order", action="store_true",
@@ -761,6 +864,7 @@ def main(argv=None):
         rng = random.Random(order_seed)
     calib_points = shuffled_calibration_points(calibration_points(args.calib_margin), rng)
     retry_thr = resolve_retry_threshold(args.no_retry, args.retry_threshold_deg, args.max_hud_accuracy_deg)
+    lapse_thr = None if args.no_lapse_rule else args.lapse_threshold_deg
 
     display_area = display_area_dict(eyetracker)
     screen = TargetScreen(monitor, pygame, args.font)
@@ -794,7 +898,7 @@ def main(argv=None):
         if not args.no_warmup:
             warmup = run_warmup(tr, eyetracker, screen, display_area, args.shrink_sec, args.settle_ms, args.window_ms)
         points = run_validation(tr, eyetracker, screen, targets, display_area,
-                                args.shrink_sec, args.settle_ms, args.window_ms, retry_thr, rng)
+                                args.shrink_sec, args.settle_ms, args.window_ms, retry_thr, rng, lapse_thr)
     except KeyboardInterrupt:
         print("中止しました（保存しません）。")
         return
@@ -825,7 +929,8 @@ def main(argv=None):
     if active_error:
         print(f"⚠ 較正データを取り出せませんでした（較正・検証の結果は保存します）: {active_error}")
     verdict = summarize_verdict(points, args.max_mean_accuracy_deg, args.max_hud_accuracy_deg,
-                                calibration_ok=None if calibration is None else calibration["succeeded"])
+                                calibration_ok=None if calibration is None else calibration["succeeded"],
+                                lapse_threshold_deg=lapse_thr)
     verdict["retried_points"] = [p["label"] for p in points if p.get("retried")]
     out = args.output_dir / f"calib_{args.subject}_{stamp}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -843,6 +948,7 @@ def main(argv=None):
         "parameters": {"settle_ms": args.settle_ms, "window_ms": args.window_ms, "shrink_sec": args.shrink_sec,
                        "calib_margin": args.calib_margin, "calibration_points": calib_points,
                        "retry_threshold_deg": retry_thr,
+                       "lapse_threshold_deg": lapse_thr,
                        "presentation_order": {"randomized": not args.fixed_order, "seed": order_seed},
                        "warmup": {"enabled": not args.no_warmup, "x": WARMUP_TARGET["x"], "y": WARMUP_TARGET["y"]}},
         "head_position": head_position,
@@ -852,7 +958,9 @@ def main(argv=None):
             "binocular": "左右眼の値の平均（片眼のみ有効ならその眼の値）",
             "passed": "1.9.0 から summary.criteria_version の基準（両眼平均の視線で全点平均と HUD 各点〔credits を除く〕が閾値以内）"
                       "かつ SDK の較正が失敗していない（calibration_ok=False なら不合格。None は較正なし＝--validate-only）。"
-                      "1.8.0 までの基準（左右眼の誤差の平均、credits を含む）の合否は passed_legacy。mean_accuracy_deg は左右眼の誤差の平均のまま",
+                      "1.10.0 から測り直した点は見落とした回を除く規則で採る（retried を参照）。1.9.0 の採り方（データ品質だけ）での合否は passed_v2。"
+                      "1.8.0 までの基準（左右眼の誤差の平均、credits を含む、データ品質だけで採った点）の合否は passed_legacy。"
+                      "mean_accuracy_deg は左右眼の誤差の平均のまま",
             "valid_rate": "検証区間のサンプルのうち、その眼の gaze_point と gaze_origin が有効な割合（0件なら 0.0）",
             "bias_norm": "正規化座標上の平均ずれ（注視点平均 − 目標）。正の y は下方向",
             "binocular_avg": "左右眼の視線を平均してから求めた accuracy / precision / bias（解析の center_x/center_y と同じ作り方。"
@@ -874,8 +982,10 @@ def main(argv=None):
             "presentation_order": "1.5.0 から、較正点は中央を最初に固定して残り8点を、検証点は1周目・測り直しとも全点を、"
                                   "乱数シード seed でランダムな順に提示する（randomized=false は --fixed-order＝1.4.0 以前の固定の順番）。"
                                   "parameters.calibration_points は実際の提示順。validation_points は提示順にかかわらず一覧の順に並べる",
-            "retried": "1.9.0 から測り直しの判定は両眼平均の視線の accuracy。1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直し、データ品質（両眼の有効率の低い方 → precision）"
-                       "が良い方を採用（accuracy は採否に使わない）。両方を first_attempt / retry_attempt に残す",
+            "retried": "1.9.0 から測り直しの判定は両眼平均の視線の accuracy。1回目の accuracy が retry_threshold_deg を超えた点は1回だけ測り直す。"
+                       "1.10.0 から採否は、片方の回の accuracy（両眼平均の視線）が parameters.lapse_threshold_deg を超え、もう片方が以下なら以下の回"
+                       "（selection_rule=lapse。目標を見ていなかった回を採らない）、それ以外はデータ品質（両眼の有効率の低い方 → precision）が良い方"
+                       "（selection_rule=data_quality）。1.9.0 の採り方で選ばれる回は selected_attempt_data_quality。両方を first_attempt / retry_attempt に残す",
         },
         "calibration": calibration if calibration else {"status": "not_performed (--validate-only)"},
         "validation_points": points,
@@ -892,6 +1002,9 @@ def main(argv=None):
         print("判定: 不合格（キャリブレーションの失敗。精度の値は前回の較正によるもの）")
     print(f"判定（{verdict['criteria_version']}）: {'合格' if verdict['passed'] else '不合格'}  HUD点の不合格: {verdict['hud_points_failed']}"
           f"  測り直した点: {verdict['retried_points']}")
+    if verdict["points_selected_by_lapse_rule"]:
+        print(f"  見落とした回を除いて採った点: {verdict['points_selected_by_lapse_rule']}"
+              f"（1.9.0 の採り方なら {'合格' if verdict['passed_v2'] else '不合格'}）")
     print(f"保存しました: {out}")
 
 

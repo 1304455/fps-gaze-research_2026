@@ -468,6 +468,39 @@ python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_TESTAPPLY
 - [ ] `calib_compare` の `passed` と `passed_current_criteria` が一致する（1.9.0 の回）
 - [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main への PR は未）
 
+#### 2026-11-05：calibrate_validate 1.10.0（測り直しの採否に、見落とした回を除く規則。案B。11/06 に研究室PCで確認）
+
+決定（CLAUDE.md §2「測り直しの採否」）：測り直した点で、片方の回の誤差（両眼平均の視線）が 5° を超え、もう片方が 5° 以下なら、
+5° 以下の回を採る。それ以外は 1.9.0 と同じくデータ品質で採る。きっかけは PL03（11/05）で、目標を見ていなかった回（7〜18°）が
+有効率が高いという理由で採られていた3例（4b の PL03 の項）。
+`summary.passed` は新しい採り方の合否（`criteria_version` = `v3-binocular-no-credits-lapse5-20261105`）、1.9.0 の採り方の合否は
+`summary.passed_v2`。点ごとに `selection_rule`（`lapse` / `data_quality`）と `selected_attempt_data_quality` を記録する。
+`--lapse-threshold-deg`（既定 5.0）、`--no-lapse-rule`（1.9.0 と同じ採り方）。`calib_compare` の `passed_current_criteria` は
+過去の JSON にもこの規則を当てて計算し直し、採る回が変わった点の数を `n_points_changed_by_lapse_rule` に出す。
+
+合成データのテスト（`tests/test_lapse_rule.py`）と、PL03 の calib JSON 4本での計算し直し（11/05、この環境）：
+1回目 1.01°（変化なし）、2回目 2.26° → 0.94°（minimap 1.88° で不合格のまま、変わった点 2）、3回目 1.30°（変化なし）、
+試合後 1.55° → 0.96°（合格、変わった点 1）。
+
+研究室PCでの確認（実験者で1回、約5分）：
+```powershell
+git pull
+python .\src\gaze_estimation\calibrate_validate.py --subject TESTLAPSE
+```
+- 検証で**最初に出た点（練習用の点の次）だけ、わざと中央を見たまま**にする（見落としを作る）。他の点は普通に見る
+  （最初に出た点が中央 `grid_0.5_0.5` のときは、次の点で行う。測り直しで同じ点が出たら、今度は普通に見る）
+- [ ] その点が測り直しになり、画面に「誤差が 5.0° を超えた回を除き、測り直しを採りました」と出る
+- [ ] 最後に「判定（v3-binocular-no-credits-lapse5-20261105）」と、「見落とした回を除いて採った点」が出る
+- [ ] JSON の `parameters.lapse_threshold_deg` が 5.0、`summary` に `passed_v2`・`points_selected_by_lapse_rule` がある。その点に `selection_rule: "lapse"` がある
+```powershell
+python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_TESTLAPSE_*.json).FullName --group-by none
+python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_PL03*.json).FullName --group-by none
+```
+- [ ] TESTLAPSE の回は `passed` と `passed_current_criteria` が一致し、`n_points_changed_by_lapse_rule` が 0
+- [ ] PL03 の4本で、`n_points_changed_by_lapse_rule` が 160842 で 2、PL03-post で 1、他は 0
+- [ ] 確認できたら 1.10.0 で凍結する
+- 弱点：閾値 5° は PL03 の例を見てから決めた。本実験の calib JSON で、5° 付近の誤差（見落としか本物の誤差か）がどれくらい出るかを控える
+
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
 > 2026-10-13 実施（過去の試合映像を視聴）：60.1 Hz、欠測率 0.7%、start_sync（confirmed）23 ms（既知 18.8±2.5 ms の範囲内）。
