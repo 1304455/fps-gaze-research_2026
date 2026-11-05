@@ -601,7 +601,7 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 
 - [ ] アンレートの予備実験を1試合通す（10/26 の週・11/2 の週）：所要時間（想定 95 分に収まるか）、生存中の分析時間（分析時間の下限を決める）、**区間付けの時間**（RUN_PIPELINE 6a の見積もり 40〜60 分と比べる）、試合後の検証（RUN_PIPELINE 2b）による精度の変化、**較正の回数**（不合格時の手順案は `docs/PENDING_DECISIONS.md` 2）、参加者のランク、下部HUDまとめ（health_armor＋abilities＋ammo_weapon）の Gaze %（→ 11/04 に PL02 で通し済み：下の結果。区間付けの時間・ランク・分析時間の下限は未）
 
-> 2026-11-04 の結果（PL02、calibrate_validate 1.9.0 で、アンレート1試合の通し。区間付けの時間・参加者のランクは未報告）：
+> 2026-11-04 の結果（PL02、calibrate_validate 1.9.0 で、アンレート1試合の通し。ランクは Gold1（台帳、11/05 確認）で low・high のどちらにも入らないので group は `mid`。区間付けの時間は未報告）：
 > - 試合は 7 ラウンドで終了し、実験全体で約 20 分（改良前の試合は約 21 ラウンド・約 40 分）。アンレートでもラウンド数（＝分析時間）は試合ごとに大きく変わる
 > - 区間内のサンプル 21,413（**分析時間 約 357 秒**）、有効率 99.8%、offscreen 0.17%、AOI の外（outside）20.7%
 > - AOI ごとのサンプル（Gaze %）：crosshair 14,100（66.0%）、minimap 2,396（11.2%）、abilities 214（1.0%）、health_armor 62（0.29%）、
@@ -668,6 +668,18 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
       （台帳の行が `qc.json` の `manifest_row` と `resolution_check` に入り、`qc_report` の `calibration_passed` が埋まることを確認）
 - [x] 下のバーの注視0件が「見ていない」のか「測れていない」のかを確かめる（10/21：見ていない。上の項目と重複していた）
 - [ ] 同期の delta（confirmed_based）を予備実験のセッションごとに控える。25〜30 ms が続くなら、期待範囲の見直しを根拠データ付きで検討する
+
+> 2026-11-05 時点の控え（`_sync.json` と v5 のログから。期待範囲 6.3〜31.3 ms）：
+>
+> | セッション | OBS / WebSocket | confirmed_based | request_based | 要求→確認 | first_sample.pc_time_sec | 範囲内 |
+> |---|---|---|---|---|---|---|
+> | PL01 10/29 `gaze_PL01_1_default_20261029_160042` | 32.2.2 / 5.7.4 | 14 ms | 2 ms | 12 ms | 0.300 s | ○ |
+> | PL02 11/04 `gaze_PL02_1_default_20261104_153226` | 33.0.1 / 5.7.6 | 15 ms | 2 ms | 13 ms | 0.310 s | ○ |
+> | PL03 11/05 `gaze_PL03_1_default_20261105_161052` | 33.0.1 / 5.7.6 | **52 ms** | 4 ms | **48 ms** | 0.301 s | × |
+>
+> - 要求から確認までは普段 12〜13 ms で、PL03 だけ 48 ms。OBS の更新（10/29 → 11/04）は PL02 で問題が出ていないので原因ではなさそう
+> - 「25〜30 ms が続く」状況ではない（予備実験の値はむしろ較正実験の平均 18.8 ms より小さい）。期待範囲は見直さない。PL03 は単発の外れとして扱い、本実験でも控え続ける
+> - 購読開始から最初のサンプルまでは 3 セッションとも約 0.30 s で安定
 
 ## 5. フレーム上の AOI 位置（T5）
 
