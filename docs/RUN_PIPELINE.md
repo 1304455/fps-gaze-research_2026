@@ -67,6 +67,8 @@ python .\src\gaze_estimation\tobii_capture_with_sync_flash_v5.py --subject $subj
 - **`--calibrate` は付けない**（手順1の較正が上書きされる）
 - 起動すると実験条件（マップ・エージェントなど）を聞かれるので、そのまま答える
 - 開始・停止は、別端末のブラウザから、コンソールに出る制御 URL で行う
+- **v5 を起動するたびに、コンソールに出た新しい URL を開き直す**（token は起動ごとに変わる。前の回のページのボタンは `invalid token` になり、開始も停止も効かない。2026-11-06 の試験で発生）
+- [ ] 開いたページの上の表示が `status: ...`（`invalid token` ではない）になっていることを確かめてから開始を押す
 - `--max-duration 3600` は止め忘れの安全装置（1時間）
 - [ ] 終了後、`data\raw` に `gaze_<subj>_1_default_<日時>.csv` / `_meta.json` / ログがある
 

@@ -489,16 +489,16 @@ python .\src\gaze_estimation\calibrate_validate.py --subject TESTLAPSE
 ```
 - 検証で**最初に出た点（練習用の点の次）だけ、わざと中央を見たまま**にする（見落としを作る）。他の点は普通に見る
   （最初に出た点が中央 `grid_0.5_0.5` のときは、次の点で行う。測り直しで同じ点が出たら、今度は普通に見る）
-- [ ] その点が測り直しになり、画面に「誤差が 5.0° を超えた回を除き、測り直しを採りました」と出る
-- [ ] 最後に「判定（v3-binocular-no-credits-lapse5-20261105）」と、「見落とした回を除いて採った点」が出る
-- [ ] JSON の `parameters.lapse_threshold_deg` が 5.0、`summary` に `passed_v2`・`points_selected_by_lapse_rule` がある。その点に `selection_rule: "lapse"` がある
+- [x] その点が測り直しになり、画面に「誤差が 5.0° を超えた回を除き、測り直しを採りました」と出る
+- [x] 最後に「判定（v3-binocular-no-credits-lapse5-20261105）」と、「見落とした回を除いて採った点」が出る
+- [x] JSON の `parameters.lapse_threshold_deg` が 5.0、`summary` に `passed_v2`・`points_selected_by_lapse_rule` がある。その点に `selection_rule: "lapse"` がある
 ```powershell
 python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_TESTLAPSE_*.json).FullName --group-by none
 python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_PL03*.json).FullName --group-by none
 ```
-- [ ] TESTLAPSE の回は `passed` と `passed_current_criteria` が一致し、`n_points_changed_by_lapse_rule` が 0
-- [ ] PL03 の4本で、`n_points_changed_by_lapse_rule` が 160842 で 2、PL03-post で 1、他は 0
-- [ ] 確認できたら 1.10.0 で凍結する
+- [x] TESTLAPSE の回は `passed` と `passed_current_criteria` が一致し、`n_points_changed_by_lapse_rule` が 0
+- [x] PL03 の4本で、`n_points_changed_by_lapse_rule` が 160842 で 2、PL03-post で 1、他は 0
+- [x] 確認できたら 1.10.0 で凍結する → **2026-11-06 に研究室PCで確認、計測コードは calibrate_validate 1.10.0 で凍結**（ユーザー報告。上の項目すべて確認済み。main への PR は未）
 - 弱点：閾値 5° は PL03 の例を見てから決めた。本実験の calib JSON で、5° 付近の誤差（見落としか本物の誤差か）がどれくらい出るかを控える
 
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
@@ -594,7 +594,9 @@ Get-ChildItem .\data\raw\gaze_TESTIDLE_*_log.txt | Sort-Object Name | ForEach-Ob
 > - **判定：待ち時間は原因ではない**（決めておいた基準「長い3回がすべて、短い3回のどれよりも 20 ms 以上長い」に当てはまらない。長い待ちの3回は 7〜10 ms で、
 >   短い待ちの3回 6〜19 ms と重なる）。6回とも期待範囲内（confirmed 8〜24 ms）。PL03 の 48 ms は待ち時間以外が原因で、今回は再現しなかった
 > - 一番長かったのはその日の最初の回（19 ms、待ち時間 49 s）。最初の録画だけ遅いのかは、この1回では分からない（観察として残す）
-> - 正常に終わらなかった回が2回（`gaze_TESTIDLE_1_idle360_20261106_123525`：開始の合図なし・meta なし、`gaze_TESTIDLE_6_idle360_20261106_125942`：同じ）。理由は未確認
+> - 正常に終わらなかった回が2回（`gaze_TESTIDLE_1_idle360_20261106_123525`：開始の合図なし・meta なし、`gaze_TESTIDLE_6_idle360_20261106_125942`：同じ）。
+>   125942 はログで確認：スマートフォンに**前の回の制御ページが開いたまま**で、「開始前キャンセル」（`/abort`）が2回とも `403`（token が違う）になり、Ctrl+C で終了した。
+>   制御用の token は v5 を起動するたびに新しく作られるので、前の回のページのボタンはどれも効かない（開始も同じ）。v5 のエラーではない。123525 のログは未確認
 > - 弱点：各3回。6回目は約 3.5 時間後のやり直しで、交互の順番が崩れている。ロビーで試したので、試合中の負荷での遅れは否定できない
 > - 対応：手順も計測コードも変えない。本実験でも delta を控え続ける（4b の同期の控え）
 
