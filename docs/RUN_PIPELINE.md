@@ -47,13 +47,15 @@ python .\src\analysis\calib_compare.py $calib --group-by none
 全点平均が小さい → 新しい回）。
 
 ```powershell
-$cands = (Get-ChildItem .\data\raw\calib_${subj}_*.json | Sort-Object LastWriteTime).FullName
+$cands = (Get-ChildItem .\data\raw\calib_${subj}_*.json | Sort-Object LastWriteTime | Select-Object -Last 3).FullName
+$cands   # 今回の3回（日時が今日の直近3つ）だけか目で確かめる
 python .\src\gaze_estimation\apply_calibration.py $cands --dry-run
 python .\src\gaze_estimation\apply_calibration.py $cands
 $apply = (Get-ChildItem .\data\raw\calibapply_${subj}_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
 $sel = (Get-Content $apply -Raw -Encoding UTF8 | ConvertFrom-Json).selected_calib_json
 $calib = (Join-Path (Resolve-Path .\data\raw) $sel)
 ```
+- [ ] `$cands` が今回の較正＋検証の3回だけ（別の日や1試合目の回が入っていない）。`calib_${subj}_*.json` は日付を問わず同じ参加者の回を全部拾うので、直近の3つに限っている（2026-11-06：PL01 で 10/29 の5本が候補に混ざっていた。降参で2試合目の前に較正し直したときに1試合目の回が選ばれるのを防ぐ）
 - [ ] `入れ直し: 成功（SHA-256 一致）` と出る（出なければ試合に進まない）
 - [ ] `$calib` が選ばれた回の calib JSON になっている（台帳の `calibration_file` にはこのファイルを書く）
 - 台帳の notes に `calib_failed_3x; calib_best=<選ばれた calib JSON>; calibapply=<calibapply_*.json>` を書く
