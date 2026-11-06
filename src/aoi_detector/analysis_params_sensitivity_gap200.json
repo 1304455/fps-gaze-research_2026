@@ -1,0 +1,14 @@
+{
+  "_comment": "感度分析用：I-DT を分割する欠測の閾値 max_gap_ms を 200 ms にする（主解析は 75 ms。2026-11-06 決定）。瞬目（75〜200 ms の欠測）をまたいで注視をつなぐ。座標は補間しない。200 ms は訪問をつなぐ閾値（visit_merge_max_gap_ms、2026-10-09 の瞬目の定義）と同じ値。それ以外は既定値と同じ。",
+  "eye_screen_distance_mm": 650.0,
+  "eye_screen_distance_source": "measured",
+  "idt_min_duration_ms": 100.0,
+  "idt_max_dispersion_deg": 1.0,
+  "max_gap_ms": 200.0,
+  "offscreen_in_denominator": true,
+  "duration_time_column": "system_time_stamp_us",
+  "segment_types": [
+    "alive"
+  ],
+  "visit_merge_max_gap_ms": 200.0
+}

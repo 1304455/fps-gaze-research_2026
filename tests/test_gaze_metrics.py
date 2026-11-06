@@ -524,3 +524,51 @@ class TestMeasuredEyeDistance:
         assert gm.merge_params(fixed)["eye_screen_distance_source"] == "fixed"
         diff = {k for k in gm.DEFAULT_PARAMS if gm.merge_params(fixed)[k] != gm.DEFAULT_PARAMS[k]}
         assert diff == {"eye_screen_distance_source"}
+
+
+class TestGapSensitivity:
+    """感度分析（max_gap_ms 200 ms、2026-11-06 決定）：瞬目相当の欠測で注視が分かれるかどうか。"""
+
+    PARAMS = ROOT / "src" / "aoi_detector" / "analysis_params_sensitivity_gap200.json"
+
+    def _params(self):
+        with open(self.PARAMS, encoding="utf-8") as f:
+            return {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+
+    def test_file_differs_from_default_only_in_max_gap(self):
+        p = self._params()
+        d = gm.merge_params(None)
+        assert p["max_gap_ms"] == 200.0
+        assert {k for k in p if p[k] != d[k]} == {"max_gap_ms"}
+        gm.merge_params(p)  # visit_merge_max_gap_ms >= max_gap_ms の検査を通る
+
+    def test_blink_splits_fixation_in_main_but_not_in_sensitivity(self, aois):
+        # 7サンプル欠測 = 時刻差 8×16.7 ms − 16.7 ms = 117 ms（PL01 で多かった 75〜150 ms の欠測）
+        pts = hold(CROSSHAIR, 20) + [None] * 7 + hold(CROSSHAIR, 20)
+        main = run(pts, aois)
+        sens = gm.analyze_session(make_df(pts), aois, DISPLAY, gm.merge_params(self._params()), None)
+        assert len(main["fixations"]) == 2
+        assert len(sens["fixations"]) == 1
+        # 欠測の時間は注視時間に含まれる（最後 − 最初 + 1サンプル）。座標は補間しないのでサンプル数は 40 のまま
+        f = sens["fixations"].iloc[0]
+        assert f["n_samples"] == 40
+        assert f["duration_sec"] == pytest.approx(47 * DT, abs=1e-3)
+        # 訪問はどちらも1回（200 ms 以下の欠測は訪問をつなぐ）＝ Gaze % ・訪問は変わらない
+        for r in (main, sens):
+            assert r["metrics_session"].set_index("aoi").loc["crosshair", "visit_count"] == 1
+
+    def test_fragment_shorter_than_min_duration_is_kept_in_sensitivity(self, aois):
+        # 瞬目の後の断片が 100 ms 未満（5サンプル＝83 ms）だと、主解析では注視として数えられない
+        pts = hold(CROSSHAIR, 20) + [None] * 7 + hold(CROSSHAIR, 5) + hold(EMPTY, 20)
+        main = run(pts, aois)
+        sens = gm.analyze_session(make_df(pts), aois, DISPLAY, gm.merge_params(self._params()), None)
+        n_main = (main["fixations"]["aoi"] == "crosshair").sum()
+        sens_fix = sens["fixations"][sens["fixations"]["aoi"] == "crosshair"]
+        assert n_main == 1
+        assert len(sens_fix) == 1 and sens_fix["n_samples"].iloc[0] == 25
+
+    def test_long_gap_still_splits_in_sensitivity(self, aois):
+        # 13サンプル欠測 = 217 ms > 200 ms は感度分析でも分ける（追跡ロス）
+        pts = hold(CROSSHAIR, 20) + [None] * 13 + hold(CROSSHAIR, 20)
+        sens = gm.analyze_session(make_df(pts), aois, DISPLAY, gm.merge_params(self._params()), None)
+        assert len(sens["fixations"]) == 2

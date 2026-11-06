@@ -150,14 +150,16 @@ python .\src\visualizer\gaze_visualizer_v3.py render $csv $mp4 --modes heatmap -
 
 ```powershell
 $participant = "P02"            # 参加者ID（$PID は PowerShell の予約変数なので使わない）
-$group = "low"                  # low / high
+$rank  = "Silver2"              # 現在のランク（例: Iron1, Silver3, Gold1, Ascendant1, Unranked）。集計で group と照合する
+$peak  = "Silver3"              # 最高ランク（参考。分からなければ ""）
+$group = "low"                  # アイアン1〜シルバー3 = low ／ アセンダント1以上 = high ／ ゴールド〜ダイヤモンド = mid
 $side  = "attack"               # 最初のラウンドの攻守（attack / defense）。手順6の注釈でも同じ値を使う
 $notes = "ETM相対角度12°;post=" + (Split-Path $post -Leaf)   # 試合後の検証のファイル名（手順2b）
 $m = ".\data\sessions_manifest.csv"
 if (-not (Test-Path $m)) { Set-Content $m -Value (Get-Content .\docs\templates\sessions_manifest_template.csv -TotalCount 1 -Encoding UTF8) -Encoding UTF8 }
 $lines = @(Get-Content $m -Encoding UTF8)
 if ($lines -match "^$base,") { Write-Warning "台帳に $base の行がもうあります。追記しません。" } else {
-    $row = "$base,$participant,$group,,,,,,$side,3840x2160,16:9,,,$calib,$mp4,$notes"
+    $row = "$base,$participant,$group,$rank,$peak,,,,$side,3840x2160,16:9,,,$calib,$mp4,$notes"
     Set-Content $m -Value ($lines + $row) -Encoding UTF8
 }
 Import-Csv $m -Encoding UTF8 | Select-Object -Last 1 | Format-List
@@ -165,6 +167,7 @@ Import-Csv $m -Encoding UTF8 | Select-Object -Last 1 | Format-List
 - 初回は、テンプレートの**見出し行だけ**で台帳を作る（記入例の行は入らない）
 - 列の順：`session_base, participant_id, group, rank_current, rank_peak, map, agent, role, start_side, game_resolution, aspect,
   minimap_settings, eye_screen_distance_cm, calibration_file, video_path, notes`（16列。空欄はカンマだけ）
+- **`rank_current` は必ず書く**（2026-11-06）。集計（手順8）が `rank_current` から期待される group と台帳の `group` を照合し、合わなければエラーで止まる（PL03 で low→high、PL01 で low→mid の書き間違いがあったため）。空欄だと照合できず警告だけになる
 - `eye_screen_distance_cm` は巻尺で実際に測ったときだけ書く（解析の距離は眼位置の実測値を使うので、空欄でよい）
 - 値にカンマを入れない（`notes` は `;` で区切る）
 - 後から列を足すときは `notepad $m` で編集する。**Excel で開いて保存しない**（`16:9` が `16:09` に変わる。ver3 の解像度チェックで止まる。
@@ -284,6 +287,12 @@ python .\src\aoi_detector\aoi_analysis-ver3.py `
 - 行末のバッククォート（`` ` ``）は行を続ける記号。**前に空白を1つ入れ、後ろには何も入れない**。
   `--overwrite`` ` のように前の空白が無いと、改行が引数に入って `unrecognized arguments` や `Invalid argument` になる（10/21 に発生）。
   迷ったら1行で書く（下の「1行版」）
+感度分析その2（I-DT を分割する欠測の閾値を 200 ms に。瞬目をまたいで注視をつなぐ。2026-11-06 決定）：
+```powershell
+python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_detector\valorant_hud_aoi_circular.json --segments ".\data\annotations\${base}_segments.csv" --sync $sync --manifest .\data\sessions_manifest.csv --params .\src\aoi_detector\analysis_params_sensitivity_gap200.json --output-dir .\data\processed\aoi_result_gap200
+```
+- 主解析（75 ms）と比べるのは注視数・平均注視時間（副指標）。Gaze %・訪問・再訪は同じになるはず（200 ms 以下の欠測は主解析でも訪問をつなぐ）
+
 - 1行版（主解析と感度分析。やり直しのときは末尾に ` --overwrite` を足す）：
   ```powershell
   python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_detector\valorant_hud_aoi_circular.json --segments ".\data\annotations\${base}_segments.csv" --sync $sync --manifest .\data\sessions_manifest.csv
@@ -339,8 +348,10 @@ if (-not (Test-Path .\data\qc_criteria.json)) { Copy-Item .\docs\templates\qc_cr
 ```powershell
 python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json
 python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json --results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650
+python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json --results-dir .\data\processed\aoi_result_gap200 --out-dir .\data\processed\aggregate_gap200
 ```
 - 出力先：`data\processed\aggregate\`
+- 台帳の `group` と `rank_current` が合わないと「エラー: 台帳の group がランクと合いません」で止まる → 台帳を直して再実行（`qc_report` に `rank_current`・`group_expected_from_rank` も出る）
 - [ ] `qc_report` で、今回のセッションが `has_result=True`、`calibration_passed` が埋まっている
 - 除外基準は 10/21 に合意した分だけ評価される（分析時間・coverage の下限は未決で null）。`qc_report` の `exclude_candidate` と `flag_*` 列、`n_criteria_evaluated`（6 になる）を見る
 - テンプレートの基準を変えたら（未決の値が決まったら）`data\qc_criteria.json` にもコピーし直す

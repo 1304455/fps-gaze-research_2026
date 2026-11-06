@@ -68,6 +68,24 @@ DEFAULT_QC_CRITERIA = {
 }
 GROUP_MISSING_LABEL = "未記入"
 GROUP_VALUES = ("low", "high")
+# ランク → group の対応（CLAUDE.md §2「群分け」：低ランク群 アイアン1〜シルバー3 ／ 高ランク群 アセンダント1以上）。
+# 照合には rank_current を使う（2026-11-06 決定）。ゴールド〜ダイヤモンドはどちらの群にも入らないので mid。
+RANK_TIERS = [
+    ("iron", ("iron", "アイアン")),
+    ("bronze", ("bronze", "ブロンズ")),
+    ("silver", ("silver", "シルバー")),
+    ("gold", ("gold", "ゴールド")),
+    ("platinum", ("platinum", "plat", "プラチナ")),
+    ("diamond", ("diamond", "dia", "ダイヤモンド", "ダイヤ")),
+    ("ascendant", ("ascendant", "asc", "アセンダント")),
+    ("immortal", ("immortal", "imm", "イモータル")),
+    ("radiant", ("radiant", "レディアント")),
+]
+UNRANKED_WORDS = ("unranked", "unrated", "none", "未ランク", "ランクなし")
+GROUP_BY_TIER = {"iron": "low", "bronze": "low", "silver": "low",
+                 "gold": "mid", "platinum": "mid", "diamond": "mid",
+                 "ascendant": "high", "immortal": "high", "radiant": "high"}
+UNRANKED_GROUP = "unranked"
 # 全セッションで一致していなければならない解析パラメータ（違うと合算できない）
 PARAMS_MUST_MATCH = [
     "idt_min_duration_ms", "idt_max_dispersion_deg", "max_gap_ms", "offscreen_in_denominator",
@@ -139,12 +157,77 @@ def load_manifest(path: Path) -> pd.DataFrame:
     return m.dropna(how="all")  # index は CSV のデータ行の位置のまま（エラー表示で行番号に使う）
 
 
+def parse_rank_tier(rank: "str | None") -> "str | None":
+    """
+    台帳のランクの文字列から段位（"iron" 〜 "radiant"）を返す。未ランクは "unranked"、空欄・読めない値は None。
+    表記ゆれ（"Gold1" / "Gold 1" / "gold_1" / "ゴールド1" / "Asc2"）を受け付ける。数字（ディビジョン）は群分けに関係しないので読まない。
+    """
+    if rank is None or (isinstance(rank, float) and np.isnan(rank)):
+        return None
+    key = "".join(ch for ch in str(rank).strip().lower() if not ch.isdigit() and ch not in " _-　")
+    if not key:
+        return None
+    if key in UNRANKED_WORDS:
+        return UNRANKED_GROUP
+    for tier, words in RANK_TIERS:
+        if key in words:
+            return tier
+    return None
+
+
+def expected_group_from_rank(rank: "str | None") -> "str | None":
+    """ランクから期待される group（low / mid / high / unranked）。空欄・読めない値は None。"""
+    tier = parse_rank_tier(rank)
+    if tier is None:
+        return None
+    return UNRANKED_GROUP if tier == UNRANKED_GROUP else GROUP_BY_TIER[tier]
+
+
+def check_group_vs_rank(manifest: pd.DataFrame) -> "tuple[list[str], list[str]]":
+    """
+    台帳の group と rank_current の対応を照合する（2026-11-06 追加。PL03 で low→high、PL01 で low→mid の書き間違いがあったため）。
+    戻り値 (errors, warnings)。
+    - error：rank_current が読めて、期待される group と台帳の group が違う（主要比較の群が入れ替わるため）
+    - warning：rank_current が空欄・読めない（照合できない）、未ランク（原則除外）、rank_peak だと別の群になる（参考）
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    if "group" not in manifest.columns:
+        return errors, warnings
+    if "rank_current" not in manifest.columns:
+        return errors, ["台帳に rank_current 列が無いので、group とランクを照合できません"]
+    for _, r in manifest.iterrows():
+        sb, group = r.get("session_base"), r.get("group")
+        group = None if pd.isna(group) else str(group)
+        rank = r.get("rank_current")
+        rank = None if pd.isna(rank) else str(rank)
+        exp = expected_group_from_rank(rank)
+        if rank is None:
+            warnings.append(f"{sb}: rank_current が空欄なので group（{group}）を照合できません")
+            continue
+        if exp is None:
+            warnings.append(f"{sb}: rank_current『{rank}』を読めないので group（{group}）を照合できません"
+                            "（例: Iron1, Gold 2, Ascendant1, ゴールド1, Unranked）")
+            continue
+        if exp == UNRANKED_GROUP:
+            warnings.append(f"{sb}: rank_current が未ランク（『{rank}』）です。未ランク者は原則除外（CLAUDE.md §2）")
+        elif group != exp:
+            errors.append(f"{sb}: rank_current『{rank}』なら group は {exp} ですが、台帳は {group}")
+        peak = r.get("rank_peak")
+        peak = None if pd.isna(peak) else str(peak)
+        exp_peak = expected_group_from_rank(peak)
+        if exp_peak is not None and exp_peak != exp:
+            warnings.append(f"{sb}: rank_peak『{peak}』だと group は {exp_peak}（照合は rank_current『{rank}』で行っています）")
+    return errors, warnings
+
+
 def validate_manifest(manifest: pd.DataFrame) -> None:
     """
     台帳の整合性を検査する。
     - session_base が空の行（他の列には値がある）・重複はエラー（merge で指標の行が増え、Gaze % が水増しされるため）
     - 1人の参加者に group が2種類以上（空欄を含む）あるとエラー（参加者が2行に分かれ、どちらの比率も過小になるため）
     - group が low / high 以外なら警告
+    - group と rank_current が合わなければエラー、照合できなければ警告（check_group_vs_rank）
     """
     if "session_base" not in manifest.columns:
         raise SystemExit("エラー: 台帳に session_base 列がありません。")
@@ -164,6 +247,13 @@ def validate_manifest(manifest: pd.DataFrame) -> None:
         odd = sorted(set(manifest["group"].dropna()) - set(GROUP_VALUES))
         if odd:
             print(f"⚠ 台帳の group に {list(GROUP_VALUES)} 以外の値があります: {odd}（その値の群として集計します）")
+    rank_errors, rank_warnings = check_group_vs_rank(manifest)
+    for w in rank_warnings:
+        print(f"⚠ {w}")
+    if rank_errors:
+        raise SystemExit("エラー: 台帳の group がランクと合いません（群分け：アイアン1〜シルバー3 = low、"
+                         "ゴールド〜ダイヤモンド = mid、アセンダント1以上 = high）:\n  " + "\n  ".join(rank_errors)
+                         + "\n台帳を直してから集計し直してください。")
 
 
 def master_long(metrics: pd.DataFrame, manifest: "pd.DataFrame | None") -> pd.DataFrame:
@@ -262,6 +352,8 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
         "session_base": qc.get("session_base"),
         "participant_id": (manifest_row or {}).get("participant_id"),
         "group": (manifest_row or {}).get("group"),
+        "rank_current": (manifest_row or {}).get("rank_current"),
+        "group_expected_from_rank": expected_group_from_rank((manifest_row or {}).get("rank_current")),
         "in_manifest": manifest_row is not None,
         "has_result": True,
         "has_segments_file": (qc.get("inputs") or {}).get("segments_file") is not None,
