@@ -21,9 +21,11 @@
   eye_z_shift_mm / eye_y_shift_mm   検証点ごとの眼の位置（calibrate_validate 1.4.0 の eye_xyz_mm）の中央値 −
                           頭部位置ガイド確定時の位置。正の z = 遠ざかった、負 = 前に出た。正の y = 上へ（UCS）
   eye_z_range_mm / eye_y_range_mm   検証点の間での眼の位置の幅（最大 − 最小）。1.3.0 以前の JSON では空
-  passed_current_criteria / mean_accuracy_binocular_deg   1.9.0 の合否の基準（両眼平均の視線、credits を除く）で
-                          calib JSON から計算し直した合否と全点平均。1.4.0 より前の JSON（両眼平均の視線が無い）では空。
-                          passed は JSON に記録された合否（1.8.0 以前は旧基準）、criteria_version はその基準の版
+  passed_current_criteria / mean_accuracy_binocular_deg   今の合否の基準（calibrate_validate 1.10.0：両眼平均の視線、credits を除く、
+                          測り直した点は見落とした回を除く規則で採る）で calib JSON から計算し直した合否と全点平均。
+                          1.4.0 より前の JSON（両眼平均の視線が無い）では空。
+                          passed は JSON に記録された合否（1.8.0 以前は旧基準、1.9.0 はデータ品質だけで採った点）、criteria_version はその基準の版
+  n_points_changed_by_lapse_rule   見落とした回を除く規則を当てて、採る回が記録と変わった点の数（1.10.0 の JSON では 0）
   calib_min_used_rate / calib_min_used_point   較正点ごと・眼ごとに、SDK が較正に使ったサンプルの割合の最小値と、
                           その点（calib_<x>_<y>_<eye>）。低い点は較正中にその点を見ていなかった可能性。1.5.0 以前の JSON では空
 ずれは左右眼の bias_*_norm の平均（片眼のみなら片眼）。度への換算は atan(ずれ[mm] / 眼−トラッカー距離)。
@@ -59,6 +61,7 @@ if str(_GAZE_DIR) not in sys.path:
 
 from calibrate_validate import (  # noqa: E402
     CRITERIA_VERSION, DEFAULT_MAX_HUD_ACCURACY_DEG, DEFAULT_MAX_MEAN_ACCURACY_DEG, judge_binocular,
+    points_selected_by_lapse_rule,
 )
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -69,7 +72,8 @@ BOTTOM_BAR_MIN_Y = 0.8
 
 PRINT_COLUMNS = [
     "file", "calib_margin", "display_angle_deg", "display_width_mm", "mean_accuracy_deg",
-    "hud_max_accuracy_deg", "passed", "passed_current_criteria", "vertical_scale_pct", "horizontal_scale_pct",
+    "hud_max_accuracy_deg", "passed", "passed_current_criteria", "n_points_changed_by_lapse_rule",
+    "vertical_scale_pct", "horizontal_scale_pct",
     "top_bar_bias_y_deg", "bottom_bar_bias_y_deg", "left_mean_accuracy_deg", "right_mean_accuracy_deg",
     "n_retried", "head_z_mm", "eye_z_shift_mm", "eye_y_shift_mm",
 ]
@@ -143,13 +147,19 @@ def eye_drift(points: list[dict], head: dict) -> dict:
 
 
 def current_criteria(points: list[dict], calibration: dict) -> dict:
-    """1.9.0 の合否の基準で計算し直した合否と全点平均。両眼平均の視線が無い JSON（1.4.0 より前）は None。"""
+    """
+    今の合否の基準（1.10.0）で計算し直した合否と全点平均。測り直した点は、記録された1回目・測り直しの値に
+    見落とした回を除く規則を当ててから判定する。両眼平均の視線が無い JSON（1.4.0 より前）は None。
+    """
     if not points or any("binocular_avg" not in p for p in points):
-        return {"passed_current_criteria": None, "mean_accuracy_binocular_deg": None}
+        return {"passed_current_criteria": None, "mean_accuracy_binocular_deg": None,
+                "n_points_changed_by_lapse_rule": None}
     validate_only = str((calibration or {}).get("status") or "").startswith("not_performed")
     ok = None if validate_only else (calibration or {}).get("succeeded")
-    v = judge_binocular(points, DEFAULT_MAX_MEAN_ACCURACY_DEG, DEFAULT_MAX_HUD_ACCURACY_DEG, calibration_ok=ok)
-    return {"passed_current_criteria": v["passed"], "mean_accuracy_binocular_deg": v["mean_accuracy_binocular_deg"]}
+    pts, changed = points_selected_by_lapse_rule(points)
+    v = judge_binocular(pts, DEFAULT_MAX_MEAN_ACCURACY_DEG, DEFAULT_MAX_HUD_ACCURACY_DEG, calibration_ok=ok)
+    return {"passed_current_criteria": v["passed"], "mean_accuracy_binocular_deg": v["mean_accuracy_binocular_deg"],
+            "n_points_changed_by_lapse_rule": len(changed)}
 
 
 def calib_point_usage(calibration: dict) -> dict:

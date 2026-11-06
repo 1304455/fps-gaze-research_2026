@@ -4,7 +4,7 @@
 研究室PC（Windows + PowerShell）で、**同じ PowerShell ウィンドウで上から順に**実行する前提。
 途中で作る変数（`$csv` など）を後の手順で使うので、ウィンドウを閉じたら手順3からやり直す。
 
-対応するバージョン：calibrate_validate 1.9.0 / apply_calibration 1.0.0 / v5 5.1.1 / aoi_analysis-ver3 3.2.0。
+対応するバージョン：calibrate_validate 1.10.0 / apply_calibration 1.0.0 / v5 5.1.1 / aoi_analysis-ver3 3.2.0。
 ETM の画面設定などの決定事項は CLAUDE.md §2、実機での検証結果は LAB_CHECKLIST.md を参照。
 
 ---
@@ -35,7 +35,7 @@ python .\src\gaze_estimation\calibrate_validate.py --subject $subj --calib-margi
 $calib = (Get-ChildItem .\data\raw\calib_${subj}_*.json | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
 python .\src\analysis\calib_compare.py $calib --group-by none
 ```
-- [ ] `passed` が True（1.9.0 の基準：両眼平均の視線で全点平均 ≤ 1.0°、HUD 各点〔credits を除く〕≤ 1.5°）
+- [ ] `passed` が True（1.9.0 の基準：両眼平均の視線で全点平均 ≤ 1.0°、HUD 各点〔credits を除く〕≤ 1.5°。1.10.0 から、測り直した点は見落とした回〔誤差 5° 超〕を除いて採る）
 - [ ] **`display_angle_deg` が 12.0**
 - 不合格なら休憩してから手順1をやり直す（**最大3回**。2026-10-30 決定）
 - 合格した回があれば、その回の較正が装置に残っている（合格したらそこで止める）→ 手順2へ
@@ -67,6 +67,8 @@ python .\src\gaze_estimation\tobii_capture_with_sync_flash_v5.py --subject $subj
 - **`--calibrate` は付けない**（手順1の較正が上書きされる）
 - 起動すると実験条件（マップ・エージェントなど）を聞かれるので、そのまま答える
 - 開始・停止は、別端末のブラウザから、コンソールに出る制御 URL で行う
+- **v5 を起動するたびに、コンソールに出た新しい URL を開き直す**（token は起動ごとに変わる。前の回のページのボタンは `invalid token` になり、開始も停止も効かない。2026-11-06 の試験で発生）
+- [ ] 開いたページの上の表示が `status: ...`（`invalid token` ではない）になっていることを確かめてから開始を押す
 - `--max-duration 3600` は止め忘れの安全装置（1時間）
 - [ ] 終了後、`data\raw` に `gaze_<subj>_1_default_<日時>.csv` / `_meta.json` / ログがある
 
@@ -343,7 +345,19 @@ python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.
 ## 終わったら
 
 次のファイルを Claude に渡し、結果を LAB_CHECKLIST に記録する（CLAUDE.md §6 の記録ルール）：
-- `qc.json`
-- v5 のログ
-- auto-sync の出力
-- 集計の `qc_report`
+
+| ファイル | 保存先（リポジトリ直下から） | ファイル名 |
+|---|---|---|
+| `qc.json` | `data\processed\aoi_result\<session_base>\` | `qc.json`（セッションごとに1つ） |
+| v5 のログ | `data\raw\`（視線 CSV と同じ場所） | `<session_base>_log.txt` と `<session_base>_obs_sync.jsonl`（OBS の録画開始・停止の記録） |
+| auto-sync の出力 | **録画の mp4 と同じフォルダ**（`data\` の外。例：`C:\Users\kawalab\Videos\`） | `<録画のファイル名>_sync.json`（手順3の `$sync`） |
+| 集計の `qc_report` | `data\processed\aggregate\` | `qc_report.csv` |
+
+- 感度分析（650 mm 固定）の結果は別の場所にある：`data\processed\aoi_result_fixed650\<session_base>\qc.json` と `data\processed\aggregate_fixed650\qc_report.csv`
+- `_sync.json` は `data\` の外にあるので、Videos フォルダを整理するときに一緒に消さない（ver3 の `--sync` が読む）
+
+4つがそろっているかの確認（手順3の `$base` と `$sync` が残っている PowerShell で）：
+```powershell
+Get-Item ".\data\processed\aoi_result\$base\qc.json", ".\data\raw\${base}_log.txt", ".\data\raw\${base}_obs_sync.jsonl", $sync, ".\data\processed\aggregate\qc_report.csv" | Format-Table FullName, Length, LastWriteTime -AutoSize
+```
+- どれかが無いとエラーが出る。無かった手順に戻る（`qc.json` → 手順7、`_sync.json` → 手順4、`qc_report.csv` → 手順8）

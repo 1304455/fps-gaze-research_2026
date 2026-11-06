@@ -468,6 +468,39 @@ python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_TESTAPPLY
 - [ ] `calib_compare` の `passed` と `passed_current_criteria` が一致する（1.9.0 の回）
 - [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main への PR は未）
 
+#### 2026-11-05：calibrate_validate 1.10.0（測り直しの採否に、見落とした回を除く規則。案B。11/06 に研究室PCで確認）
+
+決定（CLAUDE.md §2「測り直しの採否」）：測り直した点で、片方の回の誤差（両眼平均の視線）が 5° を超え、もう片方が 5° 以下なら、
+5° 以下の回を採る。それ以外は 1.9.0 と同じくデータ品質で採る。きっかけは PL03（11/05）で、目標を見ていなかった回（7〜18°）が
+有効率が高いという理由で採られていた3例（4b の PL03 の項）。
+`summary.passed` は新しい採り方の合否（`criteria_version` = `v3-binocular-no-credits-lapse5-20261105`）、1.9.0 の採り方の合否は
+`summary.passed_v2`。点ごとに `selection_rule`（`lapse` / `data_quality`）と `selected_attempt_data_quality` を記録する。
+`--lapse-threshold-deg`（既定 5.0）、`--no-lapse-rule`（1.9.0 と同じ採り方）。`calib_compare` の `passed_current_criteria` は
+過去の JSON にもこの規則を当てて計算し直し、採る回が変わった点の数を `n_points_changed_by_lapse_rule` に出す。
+
+合成データのテスト（`tests/test_lapse_rule.py`）と、PL03 の calib JSON 4本での計算し直し（11/05、この環境）：
+1回目 1.01°（変化なし）、2回目 2.26° → 0.94°（minimap 1.88° で不合格のまま、変わった点 2）、3回目 1.30°（変化なし）、
+試合後 1.55° → 0.96°（合格、変わった点 1）。
+
+研究室PCでの確認（実験者で1回、約5分）：
+```powershell
+git pull
+python .\src\gaze_estimation\calibrate_validate.py --subject TESTLAPSE
+```
+- 検証で**最初に出た点（練習用の点の次）だけ、わざと中央を見たまま**にする（見落としを作る）。他の点は普通に見る
+  （最初に出た点が中央 `grid_0.5_0.5` のときは、次の点で行う。測り直しで同じ点が出たら、今度は普通に見る）
+- [x] その点が測り直しになり、画面に「誤差が 5.0° を超えた回を除き、測り直しを採りました」と出る
+- [x] 最後に「判定（v3-binocular-no-credits-lapse5-20261105）」と、「見落とした回を除いて採った点」が出る
+- [x] JSON の `parameters.lapse_threshold_deg` が 5.0、`summary` に `passed_v2`・`points_selected_by_lapse_rule` がある。その点に `selection_rule: "lapse"` がある
+```powershell
+python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_TESTLAPSE_*.json).FullName --group-by none
+python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_PL03*.json).FullName --group-by none
+```
+- [x] TESTLAPSE の回は `passed` と `passed_current_criteria` が一致し、`n_points_changed_by_lapse_rule` が 0
+- [x] PL03 の4本で、`n_points_changed_by_lapse_rule` が 160842 で 2、PL03-post で 1、他は 0
+- [x] 確認できたら 1.10.0 で凍結する → **2026-11-06 に研究室PCで確認、計測コードは calibrate_validate 1.10.0 で凍結**（ユーザー報告。上の項目すべて確認済み。main への PR は未）
+- 弱点：閾値 5° は PL03 の例を見てから決めた。本実験の calib JSON で、5° 付近の誤差（見落としか本物の誤差か）がどれくらい出るかを控える
+
 ## 3. 計測スクリプト v5 の5分間テスト（T1）
 
 > 2026-10-13 実施（過去の試合映像を視聴）：60.1 Hz、欠測率 0.7%、start_sync（confirmed）23 ms（既知 18.8±2.5 ms の範囲内）。
@@ -497,6 +530,80 @@ python -c "import pandas as pd, sys; d=pd.read_csv(sys.argv[1]); print(d[['left_
 - [ ] calibrate_validate（1.3.0 以降）：ディスプレイ番号に `0` を入れると入力し直しになる（以前は最後の画面が選ばれていた）
 - [ ] calibrate_validate：保存された calib JSON の `summary.calibration_ok` が `true`（SDK 較正）／`null`（`--validate-only`）。
       較正が失敗した回は `false` で、精度によらず不合格になる
+
+### 3b. 起動から開始の合図までの待ち時間と、OBS の録画開始の確認の遅れ（2026-11-06 追加）
+
+きっかけ：PL03（11/05）だけ同期の delta が 52 ms（期待範囲 6.3〜31.3 ms）で、遅れていたのは OBS への録画開始の要求から
+確認（RecordStateChanged STARTED）までの 48 ms（PL01・PL02 は 12・13 ms）。v5 の起動（制御用 HTTP サーバの起動）から開始の合図までは
+PL01 約 1分42秒、PL02 約 2分05秒、**PL03 約 6分02秒**で、PL03 だけ長かった（4b の同期の控え）。待ち時間はオフセットの式には入らないが、
+OBS・PC の状態を通して間接的に効く可能性がある。3セッションでは判断できないので、待ち時間だけを変えて確かめる。
+
+判定の基準（データを見る前に決めておく）：
+- 長い待ち（6分）の3回がすべて、短い待ち（30秒）の3回のどれよりも「要求→確認」が 20 ms 以上長い → 待ち時間が原因の候補。
+  対策は手順で行う（v5 は試合の直前に起動し、起動から2分以内に合図を送る。計測コードは変えない）
+- それ以外（差が無い・ばらつく）→ PL03 の 48 ms は待ち時間以外が原因。本実験でも delta を控え続ける
+- 弱点：各3回なので、差が無いことを示す力は弱い。VALORANT の画面は全回ロビーにそろえるが、本番の試合の負荷とは違う
+
+条件：VALORANT を起動してロビーで止めておく（試合はしない）。OBS は本番と同じ設定。実験者が Spark の前に座り、画面を見ている。
+順番：短 → 長 → 長 → 短 → 短 → 長（交互にして、時間とともに PC の状態が変わる影響を両方の条件に分ける）。全体で約 35 分。
+
+各回（`$n` は 1〜6、`$cond` は短い待ちなら `idle030`、長い待ちなら `idle360`）：
+```powershell
+$n = 1; $cond = "idle030"
+python .\src\gaze_estimation\tobii_capture_with_sync_flash_v5.py --subject TESTIDLE --trial $n --condition $cond --skip-conditions-prompt --obs-config .\obs_config.json --max-duration 120
+```
+1. コンソールに「制御用HTTPサーバを起動しました」と出た時刻から、スマートフォンのストップウォッチで測る
+2. 別端末のブラウザで制御 URL を開いておく（開くのは待ち時間の間でよい）
+3. `idle030` は 30 秒後、`idle360` は 6 分後に「開始」を押す
+4. 約 30 秒録画したら「停止」を押す
+5. 次の回の前に 30 秒ほど空ける
+
+6回が終わったら、待ち時間・要求→確認・delta を一覧にする：
+```powershell
+Get-ChildItem .\data\raw\gaze_TESTIDLE_*_log.txt | Sort-Object Name | ForEach-Object {
+  $t = Get-Content $_.FullName -Encoding UTF8
+  function ts($pat) { $l = $t | Select-String -Pattern $pat | Select-Object -First 1; if ($l) { [datetime]::ParseExact($l.Line.Substring(0, 23), 'yyyy-MM-dd HH:mm:ss,fff', $null) } }
+  $srv = ts '制御用HTTPサーバを起動しました'; $start = ts 'start要求を受理しました'
+  $req = ts '録画開始要求を送信しました'; $conf = ts '録画開始を確認しました'
+  $meta = $_.FullName -replace '_log\.txt$', '_meta.json'
+  $ss = if (Test-Path $meta) { (Get-Content $meta -Raw -Encoding UTF8 | ConvertFrom-Json).start_sync } else { $null }
+  [pscustomobject]@{ file = $_.Name
+    wait_s = if ($srv -and $start) { [math]::Round(($start - $srv).TotalSeconds, 0) } else { $null }
+    req_to_confirm_ms = if ($req -and $conf) { [math]::Round(($conf - $req).TotalMilliseconds, 0) } else { $null }
+    confirmed_ms = if ($ss) { [math]::Round($ss.delta_sec_confirmed_based * 1000, 1) } else { $null }
+    request_ms = if ($ss) { [math]::Round($ss.delta_sec_request_based * 1000, 1) } else { $null }
+    note = if (-not $start) { '開始の合図なし' } elseif (-not $ss) { 'meta なし（正常に終了していない）' } else { '' } }
+} | Format-Table -AutoSize
+```
+- [ ] 6行出て、`wait_s` が 30 前後と 360 前後に分かれている
+- [ ] 表を Claude に渡し、結果をこの節に `> 2026-11-06 の結果` として書く（上の判定の基準で判断する）
+- 録画（Videos の mp4）と `data\raw\gaze_TESTIDLE_*` は試験用。本番のデータと混ざらないよう、台帳には書かない
+- 開始の合図が無い回・正常に終わらなかった回は、空欄と note で分かるようにした（11/06 の初回は、`$start` が無いと待ち時間が −639 億秒と出て、meta が無いとエラーになった）
+
+> 2026-11-06 の結果（実験者、VALORANT はロビー、OBS は本番の設定。有効6回）：
+>
+> | 回 | 条件 | 待ち時間 | 要求→確認 | confirmed_based | request_based |
+> |---|---|---|---|---|---|
+> | 1（12:33） | 短 | 49 s | 19 ms | 24 ms | 5 ms |
+> | 2（12:37） | 長 | 364 s | 10 ms | 12 ms | 2 ms |
+> | 3（12:45） | 長 | 380 s | 9 ms | 12 ms | 3 ms |
+> | 4（12:55） | 短 | 29 s | 6 ms | 8 ms | 2 ms |
+> | 5（12:57） | 短 | 30 s | 7 ms | 10 ms | 3 ms |
+> | 6（16:21、やり直し） | 長 | 361 s | 7 ms | 9 ms | 2 ms |
+>
+> - **判定：待ち時間は原因ではない**（決めておいた基準「長い3回がすべて、短い3回のどれよりも 20 ms 以上長い」に当てはまらない。長い待ちの3回は 7〜10 ms で、
+>   短い待ちの3回 6〜19 ms と重なる）。6回とも期待範囲内（confirmed 8〜24 ms）。PL03 の 48 ms は待ち時間以外が原因で、今回は再現しなかった
+> - 一番長かったのはその日の最初の回（19 ms、待ち時間 49 s）。最初の録画だけ遅いのかは、この1回では分からない（観察として残す）
+> - 正常に終わらなかった回が2回（`gaze_TESTIDLE_1_idle360_20261106_123525`：開始の合図なし・meta なし、`gaze_TESTIDLE_6_idle360_20261106_125942`：同じ）。
+>   125942 はログで確認：スマートフォンに**前の回の制御ページが開いたまま**で、「開始前キャンセル」（`/abort`）が2回とも `403`（token が違う）になり、Ctrl+C で終了した。
+>   制御用の token は v5 を起動するたびに新しく作られるので、前の回のページのボタンはどれも効かない（開始も同じ）。v5 のエラーではない。
+>   123525 もログで確認：新しいページを開いて「開始前キャンセル」（`/abort`）が受け付けられ、測定前に中止した（trial 番号の付け間違いに気づいて止めたと思われる）。
+>   **開始前キャンセルでは meta を作らずに終わる作り**で（`return` で後のメタデータの保存を飛ばす）、ログの最後の「セッション終了」も出ない。
+>   また、中止の処理で OBS の接続を先に切ってから停止の処理が走るため、`録画状態の事前確認に失敗` の WARNING と `OBS録画停止要求で例外` の ERROR
+>   （`socket is already closed`）がログに出る。録画は始まっていないので、データにも OBS にも害はない（見かけ上のエラー）。
+>   凍結後なので計測コードは直さず、既知の動作として残す（本番で開始前キャンセルをしたときに、この ERROR を気にしなくてよい）
+> - 弱点：各3回。6回目は約 3.5 時間後のやり直しで、交互の順番が崩れている。ロビーで試したので、試合中の負荷での遅れは否定できない
+> - 対応：手順も計測コードも変えない。本実験でも delta を控え続ける（4b の同期の控え）
 
 ## 4. 予備実験データで新旧の解析を比べる（T3・T4）
 
@@ -601,7 +708,7 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 
 - [ ] アンレートの予備実験を1試合通す（10/26 の週・11/2 の週）：所要時間（想定 95 分に収まるか）、生存中の分析時間（分析時間の下限を決める）、**区間付けの時間**（RUN_PIPELINE 6a の見積もり 40〜60 分と比べる）、試合後の検証（RUN_PIPELINE 2b）による精度の変化、**較正の回数**（不合格時の手順案は `docs/PENDING_DECISIONS.md` 2）、参加者のランク、下部HUDまとめ（health_armor＋abilities＋ammo_weapon）の Gaze %（→ 11/04 に PL02 で通し済み：下の結果。区間付けの時間・ランク・分析時間の下限は未）
 
-> 2026-11-04 の結果（PL02、calibrate_validate 1.9.0 で、アンレート1試合の通し。区間付けの時間・参加者のランクは未報告）：
+> 2026-11-04 の結果（PL02、calibrate_validate 1.9.0 で、アンレート1試合の通し。ランクは Gold1（台帳、11/05 確認）で low・high のどちらにも入らないので group は `mid`。区間付けの時間は未報告）：
 > - 試合は 7 ラウンドで終了し、実験全体で約 20 分（改良前の試合は約 21 ラウンド・約 40 分）。アンレートでもラウンド数（＝分析時間）は試合ごとに大きく変わる
 > - 区間内のサンプル 21,413（**分析時間 約 357 秒**）、有効率 99.8%、offscreen 0.17%、AOI の外（outside）20.7%
 > - AOI ごとのサンプル（Gaze %）：crosshair 14,100（66.0%）、minimap 2,396（11.2%）、abilities 214（1.0%）、health_armor 62（0.29%）、
@@ -622,11 +729,64 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 > - [ ] 試合前と試合後で `active_calibration.sha256` が一致するか（試合中も同じ較正だったか）を確認する
 > - [x] 降参で試合が短く終わったときの扱い → 11/05 決定：その場で交渉してもう1試合（CLAUDE.md §2、RUN_PIPELINE 2c）。分析時間の下限は未決
 
+> 2026-11-05 の結果（PL03、high 群、アンレート1試合。受け取ったのは qc.json・v5 のログ・`_sync.json`・qc_report。calib JSON（試合前・試合後）はまだ見ていない）：
+> - **頭部の位置を合わせきれなかった**：座高が高く、モニターを最高・椅子を最低にしても画面中央のガイドに合わせられなかった（ユーザー報告）
+> - 録画は 16:16:55〜16:51:04（約 34 分）。区間 25（25 ラウンド）、区間内のサンプル 40,975（**分析時間 約 682 秒**、PL02 の約 1.9 倍）、
+>   区間内の有効率 96.8%、`min_segment_coverage` 0.995、注視 2,017 件
+> - offscreen 0.55%（219 サンプル：上 80・下 79・左 46・右 14）。**画面の上にはみ出したサンプルが PL01（3）・PL02（0）より多い**。頭の位置が合わなかったことと関係する可能性がある（calib JSON の眼の位置 y と縦のずれで確かめる）
+> - 眼−画面距離（区間内の中央値）644.4 mm（基準 650 mm との差 −6 mm）。記録全体では p95 が 785 mm（区間外＝購入・死亡中に後ろにもたれていた）
+> - 欠測：区間内 346 件、200 ms 超は 9 件（200〜300 ms 8、500 ms 超 1）。長い欠測で切れた同じ AOI の訪問は 3 件
+> - **較正は不合格**（`calib_PL03_20261105_161034`、1.9.0 の基準）：両眼平均の全点平均 1.30°（基準 ≤ 1.0°）、左右眼の誤差の平均 1.51°。
+>   **較正は3回行った**（ユーザー報告。受け取ったのは3回目＝試合に使った回の JSON だけ。台帳の notes に `calib_failed_3x; calib_best=` が無い）。
+>   試合前と試合後の `active_calibration.sha256` は一致（`7231664a…`）＝試合中は同じ較正だった
+> - 試合前の較正（`calib_PL03_20261105_161034`）の詳細：
+>   - 頭の位置の記録：眼の中点 y −39.6 mm（標準姿勢の目標 −44.8 mm、差 +5 mm で許容 ±30 mm の内）、z 687.3 mm（目標 661.4 mm、+26 mm）。
+>     確定時の警告は位置ではなく「両眼が検出されていません（左眼の有効率 79%）」
+>   - **画面の下の点で左眼が落ちる**：左眼の有効率は上の段の点がすべて 1.0、下の段は 0.37〜0.83（grid_0.5_0.9 0.37、abilities 0.62、health_armor 0.73）。右眼はほぼ 1.0。
+>     座高が高く眼が画面に対して高い位置にあり、下を見るときにまぶたで左眼が隠れた可能性（推測。動画などでは確かめていない）
+>   - HUD で不合格は ammo_weapon だけ（両眼平均 2.32°、下向きに +0.076）。全点平均 1.30° のうち credits（5.07°）を除けば 1.06°（credits は 10/30 の決定どおり全点平均には含める）
+> - 試合中の眼−トラッカー距離（区間内の中央値）は 644 mm で、較正のとき（687 mm）より約 4 cm 近い（前のめり）。前のめりの姿勢で精度が落ちることは既知の限界（CLAUDE.md §2）
+> - **試合後の検証**（`calib_PL03-post_20261105_165238`）：両眼平均の全点平均 1.55°、不合格（記録のみ）。HUD の点（credits を除く）はすべて ≤ 1.5°。眼の中点 y −25.6 mm・z 659.7 mm（試合前より 14 mm 高く、28 mm 近い）。
+>   **不合格の原因はほぼ1点**：最初に出た点 grid_0.5_0.9 の1回目が 10.56°（y のずれ −0.325＝画面中央付近を見ていた。直前の練習用の点は中央）。測り直しは 0.68° だったが、
+>   採否の規則（両眼の有効率の低い方が高い回を採る。1回目 0.93、測り直し 0.80）で1回目が採用された。測り直しを採っていれば全点平均 0.96° で合格の値になる。
+>   → 「データの品質で採る」規則が、目標を見ていなかった回を採用した例。練習用の点を入れても、最初の点での見落としは起きた
+> - PL02 の group `mid` は意図どおり（ランクはゴールドで、どちらの群にも入らない。ユーザー確認 11/05）
+> - **同期が期待範囲の外**：`delta_sec_confirmed_based` 52 ms（期待範囲 6.3〜31.3 ms、これまでの実測 22〜26 ms）。request_based は 4 ms で普段どおり。
+>   ログでは録画開始の要求（16:16:55.019）から確認（16:16:55.067）まで 48 ms かかっている＝OBS 側の開始確認が遅れた。
+>   OBS の書き込み開始自体が遅れたのか（それなら offset は正しい）、確認イベントの配送だけが遅れたのか（それなら最大で約 2〜3 フレームのずれ）は、このデータでは区別できない
+> - qc_report では `flag_sync_out_of_band` と `flag_calibration_failed` が立ち、`exclude_candidate` = True（主解析からは除外。感度分析のみ）
+> - 台帳を Excel で保存して aspect が時刻に変わり、start_side（attack→defense）と group（low→high）も書き間違えていた。11/05 に直した（notes に `manifest_fix=` の記録あり）
+> - [x] calib JSON（試合前・試合後）で、不合格の点・縦のずれ・眼の位置 y を見る → 上の結果（11/05）
+> - [x] 1回目・2回目の calib JSON を確認し、3回目が「一番良い回」の規則（CLAUDE.md §2）で選ばれる回だったかを確かめる → 11/05：選ばれる回だった。
+>   1回目 `calib_PL03_20261105_160700`：両眼平均 1.01°、HUD の不合格 3（enemy_team_status 1.53°・abilities 1.54°・ammo_weapon 1.66°）。
+>   2回目 `calib_PL03_20261105_160842`：2.26°、HUD の不合格 1（minimap 18.14°）。3回目は 1.30°、HUD の不合格 1（ammo_weapon）。
+>   HUD の不合格の数で2回目と3回目が並び、全点平均で3回目。3回目は最後の回なので入れ直しは不要（SHA-256 も一致）。
+>   眼の中点 y は 1回目 −27.0、2回目 −28.6、3回目 −39.6 mm（目標 −44.8 mm、どれも許容 ±30 mm の内）
+> - [ ] 台帳の notes に `calib_failed_3x; calib_best=calib_PL03_20261105_161034.json` を足す
+> - **見落とした回が採られた例**：2回目の grid_0.5_0.5（7.22°、測り直し 0.95°）と minimap（18.14°、測り直し 1.88°）、試合後の grid_0.5_0.9（10.56°、測り直し 0.68°）。
+>   PL03 の4ファイルで 5° を超えた測定は 13 回。→ 11/05 に案B（片方が 5° 超・もう片方が 5° 以下なら後者を採る）で進めると決定（実装は未）。
+>   案Bを当てると2回目が 0.94°（HUD の不合格は minimap 1.88° の1つ）になり、**一番良い回が3回目から2回目に変わる**。PL03 が3回とも不合格なのは変わらない
+> - [ ] 座高が調節範囲を超える参加者への対応を本実験（11/9）の前に決める
+> - [ ] 測り直しの採否の規則（データの品質で採る）が、目標を見ていなかった回を採ることへの対応を、凍結（11/6）の前に決める
+> - [ ] 同期の 52 ms が単発か：次の予備実験・本実験の delta を控える（下の項目）
+
 - [ ] 10/21 に crosshair を `radius_deg: 2.0` に変えたので、それより前に解析したセッションを ver3 の `--overwrite` 付きで解析し直す（AOI の中身の違いで上書き防止が働く）。集計は `--qc-criteria .\data\qc_criteria.json` を付ける（RUN_PIPELINE 手順8）
 - [x] 台帳の記入例の行を削除し、このセッションの行を書いて、ver3 と集計を `--overwrite` 付きで実行し直す（10/21、主解析）
       （台帳の行が `qc.json` の `manifest_row` と `resolution_check` に入り、`qc_report` の `calibration_passed` が埋まることを確認）
 - [x] 下のバーの注視0件が「見ていない」のか「測れていない」のかを確かめる（10/21：見ていない。上の項目と重複していた）
 - [ ] 同期の delta（confirmed_based）を予備実験のセッションごとに控える。25〜30 ms が続くなら、期待範囲の見直しを根拠データ付きで検討する
+
+> 2026-11-05 時点の控え（`_sync.json` と v5 のログから。期待範囲 6.3〜31.3 ms）：
+>
+> | セッション | OBS / WebSocket | confirmed_based | request_based | 要求→確認 | first_sample.pc_time_sec | 範囲内 |
+> |---|---|---|---|---|---|---|
+> | PL01 10/29 `gaze_PL01_1_default_20261029_160042` | 32.2.2 / 5.7.4 | 14 ms | 2 ms | 12 ms | 0.300 s | ○ |
+> | PL02 11/04 `gaze_PL02_1_default_20261104_153226` | 33.0.1 / 5.7.6 | 15 ms | 2 ms | 13 ms | 0.310 s | ○ |
+> | PL03 11/05 `gaze_PL03_1_default_20261105_161052` | 33.0.1 / 5.7.6 | **52 ms** | 4 ms | **48 ms** | 0.301 s | × |
+>
+> - 要求から確認までは普段 12〜13 ms で、PL03 だけ 48 ms。OBS の更新（10/29 → 11/04）は PL02 で問題が出ていないので原因ではなさそう
+> - 「25〜30 ms が続く」状況ではない（予備実験の値はむしろ較正実験の平均 18.8 ms より小さい）。期待範囲は見直さない。PL03 は単発の外れとして扱い、本実験でも控え続ける
+> - 購読開始から最初のサンプルまでは 3 セッションとも約 0.30 s で安定
 
 ## 5. フレーム上の AOI 位置（T5）
 
