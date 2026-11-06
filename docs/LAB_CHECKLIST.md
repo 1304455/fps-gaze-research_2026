@@ -27,6 +27,12 @@ pip install -r requirements.txt -r requirements-dev.txt; if ($?) { python -m pyt
 > 弱点：失敗した venv の実際の Python のバージョンはまだ確認していない。作り直した venv での `pip install`・`pytest` の結果は未記録。
 > 計測で使っている既存の環境は、凍結（11/6）前なので作り直していない。
 
+> 2026-11-06 の結果（計測で使っている既存の venv、凍結時の記録）：
+> `python -c ...` の出力は **3.10.0 (tags/v3.10.0:b494f59) 64 bit (AMD64)** で、要件（3.10.x / 64 bit）を満たす。`tobii-research==2.1.0`。
+> `pip freeze` の結果を `requirements-lock.txt` としてリポジトリに置いた（UTF-8 ＋ coding 宣言。PowerShell 5.1 の `>` は UTF-16 で書くので、
+> 研究室PCで作ったファイルはそのままコミットしない）。計測コードの凍結点はタグ `freeze-20261106`（main の 3bca92a、calibrate_validate 1.10.0）。
+> 弱点：`py -0p`（インストール済みの Python の一覧）は未記録。新しく作った venv での `pip install`・`pytest` も未確認（必要になったら上の手順で行う）。
+
 ## 1. OBS パスワードの変更（必須・T0）
 
 旧 README に OBS WebSocket のパスワードが平文で載っており、公開リポジトリの **git 履歴に残っている**。
@@ -434,7 +440,7 @@ python .\src\analysis\calib_compare.py $calib --group-by none
 - [x] 検証の開始直後に中央の点が1回出てから、ランダムな順番の点が始まる（目視）
 - [x] `script.version` が `1.7.0`、`validation_warmup` に中央の点の結果があり、`validation_points` は 17 点のまま
 - [x] `calib_compare` が今までどおり動く（練習用の点は集計に入らない）
-- [ ] 確認できたら凍結し、main への PR を作る（10/30 研究室PCで上の項目を確認済み。凍結・PR は未）
+- [x] 確認できたら凍結し、main への PR を作る（10/30 研究室PCで上の項目を確認済み。1.7.0 は PR #4 で main にマージ済み、11/06 に 1.10.0 で凍結）
 - [ ] 効果の確認（凍結後でよい）：1.7.0 の回を重ね、最初の点（presentation_index 0）の1回目の誤差がその回の他の点より悪い傾向が消えたかを見る（10/30 の4回：悪い方から 1・4・7・3 位）
 
 #### 2026-10-30：calibrate_validate 1.8.0 と apply_calibration 1.0.0（較正データの保存と入れ直し。凍結前に研究室PCで確認）
@@ -463,7 +469,7 @@ python .\src\gaze_estimation\apply_calibration.py (Get-ChildItem .\data\raw\cali
 - [ ] `apply_calibration.py $first` が「入れ直し: 成功（SHA-256 一致）」と出て、`calibapply_TESTAPPLY_*.json` ができる
 - [ ] 入れ直した後の検証のみ（`-post`）の `active_calibration.sha256` が1回目と一致する（＝装置の較正が1回目に戻った）
 - [ ] `--dry-run` で2回のうち規則どおりの回が選ばれる
-- [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main への PR は未）
+- [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main へは PR #4 でマージ済み）
 
 #### 2026-10-30：calibrate_validate 1.9.0（合否の基準を両眼平均の視線・credits 除外に。1.8.0 の確認と同じ日に）
 
@@ -478,7 +484,7 @@ python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_TESTAPPLY
 - [ ] 画面の最後に「判定（v2-binocular-no-credits-20261030）: 合格／不合格」と、両眼平均の視線の全体平均が出る
 - [ ] JSON の `summary` に `passed`・`passed_legacy`・`criteria_version`・`mean_accuracy_binocular_deg` がある
 - [ ] `calib_compare` の `passed` と `passed_current_criteria` が一致する（1.9.0 の回）
-- [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main への PR は未）
+- [x] 確認できたら凍結し、main への PR を作る（研究室PCで動作を確認、ユーザー報告 11/04。計測コードは 1.9.0 で凍結。main へは PR #4 でマージ済み）
 
 #### 2026-11-05：calibrate_validate 1.10.0（測り直しの採否に、見落とした回を除く規則。案B。11/06 に研究室PCで確認）
 
@@ -510,7 +516,7 @@ python .\src\analysis\calib_compare.py (Get-ChildItem .\data\raw\calib_PL03*.jso
 ```
 - [x] TESTLAPSE の回は `passed` と `passed_current_criteria` が一致し、`n_points_changed_by_lapse_rule` が 0
 - [x] PL03 の4本で、`n_points_changed_by_lapse_rule` が 160842 で 2、PL03-post で 1、他は 0
-- [x] 確認できたら 1.10.0 で凍結する → **2026-11-06 に研究室PCで確認、計測コードは calibrate_validate 1.10.0 で凍結**（ユーザー報告。上の項目すべて確認済み。main への PR は未）
+- [x] 確認できたら 1.10.0 で凍結する → **2026-11-06 に研究室PCで確認、計測コードは calibrate_validate 1.10.0 で凍結**（ユーザー報告。上の項目すべて確認済み。main へは PR #6 でマージ済み。凍結点はタグ `freeze-20261106`）
 - 弱点：閾値 5° は PL03 の例を見てから決めた。本実験の calib JSON で、5° 付近の誤差（見落としか本物の誤差か）がどれくらい出るかを控える
 
 ## 3. 計測スクリプト v5 の5分間テスト（T1）

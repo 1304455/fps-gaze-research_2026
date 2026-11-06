@@ -203,7 +203,7 @@ python -m pytest                      # 解析ロジックのテスト（合成�
 | AOI 位置確認 | `PyQt5` |
 
 > `keyboard` は **Vanguard 対策により使用禁止**です（8章参照）。インストールもしないでください。
-> 本実験前の計測コード凍結時に `pip freeze > requirements-lock.txt` でバージョンを固定します。lock ファイルは Python 自体のバージョンを固定しないので、同時に `python --version` の結果も記録します。
+> 本実験前の計測コード凍結時（2026-11-06、タグ `freeze-20261106`）に研究室PCの venv の `pip freeze` を `requirements-lock.txt` に記録しました（Python 3.10.0 64bit）。同じ環境を作り直すときは `pip install -r requirements-lock.txt`。lock ファイルは Python 自体のバージョンを固定しないので、同時に `python --version` の結果も記録します。
 
 ### 4.3 OBS 側の設定
 
