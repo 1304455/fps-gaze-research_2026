@@ -166,3 +166,69 @@ def test_qc_criteria_template_keys_match_defaults():
     keys = {k for k in t if not k.startswith("_")}
     assert keys == set(agg.DEFAULT_QC_CRITERIA)
     assert set(t["_proposal"]) == set(agg.DEFAULT_QC_CRITERIA)
+
+
+# ---- group とランクの照合（2026-11-06 追加） ----
+
+@pytest.mark.parametrize("rank, expected", [
+    ("Iron1", "low"), ("bronze 3", "low"), ("Silver3", "low"), ("シルバー3", "low"),
+    ("Gold1", "mid"), ("ゴールド1", "mid"), ("Platinum 2", "mid"), ("Diamond3", "mid"), ("ダイヤ2", "mid"),
+    ("Ascendant1", "high"), ("asc_2", "high"), ("Immortal 3", "high"), ("Radiant", "high"), ("アセンダント1", "high"),
+    ("Unranked", "unranked"), ("未ランク", "unranked"),
+    (None, None), ("", None), ("Golden1", None), ("Platnum2", None),
+])
+def test_expected_group_from_rank(rank, expected):
+    assert agg.expected_group_from_rank(rank) == expected
+
+
+def _manifest_with(tmp, rows):
+    m = tmp / "m.csv"
+    pd.DataFrame(rows).to_csv(m, index=False)
+    return m
+
+
+def test_group_rank_mismatch_is_error(setup):
+    # PL01（11/06）：ゴールド1なのに group=low と書いていた。主要比較の群が入れ替わるので止める
+    tmp, res, _ = setup
+    manifest = _manifest_with(tmp, [
+        {"session_base": "s_a", "participant_id": "P1", "group": "low", "rank_current": "Gold1"},
+        {"session_base": "s_b", "participant_id": "P1", "group": "low", "rank_current": "Gold1"},
+    ])
+    with pytest.raises(SystemExit, match="Gold1.*mid"):
+        agg.main(["--results-dir", str(res), "--manifest", str(manifest), "--out-dir", str(tmp / "o")])
+
+
+def test_group_rank_match_passes_and_is_reported(setup):
+    tmp, res, _ = setup
+    manifest = _manifest_with(tmp, [
+        {"session_base": "s_a", "participant_id": "P1", "group": "high", "rank_current": "Ascendant 1"},
+        {"session_base": "s_b", "participant_id": "P1", "group": "high", "rank_current": "Immortal1"},
+    ])
+    out = tmp / "out"
+    agg.main(["--results-dir", str(res), "--manifest", str(manifest), "--out-dir", str(out)])
+    q = pd.read_csv(out / "qc_report.csv")
+    assert list(q["group_expected_from_rank"]) == ["high", "high"]
+    assert list(q["rank_current"]) == ["Ascendant 1", "Immortal1"]
+
+
+def test_blank_or_unreadable_rank_is_warning_only(setup, capsys):
+    tmp, res, _ = setup
+    manifest = _manifest_with(tmp, [
+        {"session_base": "s_a", "participant_id": "P1", "group": "low", "rank_current": ""},
+        {"session_base": "s_b", "participant_id": "P1", "group": "low", "rank_current": "Golden1"},
+    ])
+    agg.main(["--results-dir", str(res), "--manifest", str(manifest), "--out-dir", str(tmp / "out")])
+    out = capsys.readouterr().out
+    assert "s_a: rank_current が空欄" in out
+    assert "s_b: rank_current『Golden1』を読めない" in out
+
+
+def test_unranked_and_peak_difference_are_warnings(capsys):
+    m = pd.DataFrame([
+        {"session_base": "x", "participant_id": "P1", "group": "low", "rank_current": "Silver2", "rank_peak": "Gold3"},
+        {"session_base": "y", "participant_id": "P2", "group": "low", "rank_current": "Unranked", "rank_peak": None},
+    ])
+    errors, warnings = agg.check_group_vs_rank(m)
+    assert errors == []
+    assert any("rank_peak『Gold3』だと group は mid" in w for w in warnings)
+    assert any("未ランク" in w for w in warnings)
