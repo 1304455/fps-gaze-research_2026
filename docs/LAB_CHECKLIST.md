@@ -531,6 +531,51 @@ python -c "import pandas as pd, sys; d=pd.read_csv(sys.argv[1]); print(d[['left_
 - [ ] calibrate_validate：保存された calib JSON の `summary.calibration_ok` が `true`（SDK 較正）／`null`（`--validate-only`）。
       較正が失敗した回は `false` で、精度によらず不合格になる
 
+### 3b. 起動から開始の合図までの待ち時間と、OBS の録画開始の確認の遅れ（2026-11-06 追加）
+
+きっかけ：PL03（11/05）だけ同期の delta が 52 ms（期待範囲 6.3〜31.3 ms）で、遅れていたのは OBS への録画開始の要求から
+確認（RecordStateChanged STARTED）までの 48 ms（PL01・PL02 は 12・13 ms）。v5 の起動（制御用 HTTP サーバの起動）から開始の合図までは
+PL01 約 1分42秒、PL02 約 2分05秒、**PL03 約 6分02秒**で、PL03 だけ長かった（4b の同期の控え）。待ち時間はオフセットの式には入らないが、
+OBS・PC の状態を通して間接的に効く可能性がある。3セッションでは判断できないので、待ち時間だけを変えて確かめる。
+
+判定の基準（データを見る前に決めておく）：
+- 長い待ち（6分）の3回がすべて、短い待ち（30秒）の3回のどれよりも「要求→確認」が 20 ms 以上長い → 待ち時間が原因の候補。
+  対策は手順で行う（v5 は試合の直前に起動し、起動から2分以内に合図を送る。計測コードは変えない）
+- それ以外（差が無い・ばらつく）→ PL03 の 48 ms は待ち時間以外が原因。本実験でも delta を控え続ける
+- 弱点：各3回なので、差が無いことを示す力は弱い。VALORANT の画面は全回ロビーにそろえるが、本番の試合の負荷とは違う
+
+条件：VALORANT を起動してロビーで止めておく（試合はしない）。OBS は本番と同じ設定。実験者が Spark の前に座り、画面を見ている。
+順番：短 → 長 → 長 → 短 → 短 → 長（交互にして、時間とともに PC の状態が変わる影響を両方の条件に分ける）。全体で約 35 分。
+
+各回（`$n` は 1〜6、`$cond` は短い待ちなら `idle030`、長い待ちなら `idle360`）：
+```powershell
+$n = 1; $cond = "idle030"
+python .\src\gaze_estimation\tobii_capture_with_sync_flash_v5.py --subject TESTIDLE --trial $n --condition $cond --skip-conditions-prompt --obs-config .\obs_config.json --max-duration 120
+```
+1. コンソールに「制御用HTTPサーバを起動しました」と出た時刻から、スマートフォンのストップウォッチで測る
+2. 別端末のブラウザで制御 URL を開いておく（開くのは待ち時間の間でよい）
+3. `idle030` は 30 秒後、`idle360` は 6 分後に「開始」を押す
+4. 約 30 秒録画したら「停止」を押す
+5. 次の回の前に 30 秒ほど空ける
+
+6回が終わったら、待ち時間・要求→確認・delta を一覧にする：
+```powershell
+Get-ChildItem .\data\raw\gaze_TESTIDLE_*_log.txt | Sort-Object Name | ForEach-Object {
+  $t = Get-Content $_.FullName -Encoding UTF8
+  function ts($pat) { $l = $t | Select-String -Pattern $pat | Select-Object -First 1; if ($l) { [datetime]::ParseExact($l.Line.Substring(0, 23), 'yyyy-MM-dd HH:mm:ss,fff', $null) } }
+  $srv = ts '制御用HTTPサーバを起動しました'; $start = ts 'start要求を受理しました'
+  $req = ts '録画開始要求を送信しました'; $conf = ts '録画開始を確認しました'
+  $meta = $_.FullName -replace '_log\.txt$', '_meta.json'
+  $ss = (Get-Content $meta -Raw -Encoding UTF8 | ConvertFrom-Json).start_sync
+  [pscustomobject]@{ file = $_.Name; wait_s = [math]::Round(($start - $srv).TotalSeconds, 0)
+    req_to_confirm_ms = [math]::Round(($conf - $req).TotalMilliseconds, 0)
+    confirmed_ms = [math]::Round($ss.delta_sec_confirmed_based * 1000, 1); request_ms = [math]::Round($ss.delta_sec_request_based * 1000, 1) }
+} | Format-Table -AutoSize
+```
+- [ ] 6行出て、`wait_s` が 30 前後と 360 前後に分かれている
+- [ ] 表を Claude に渡し、結果をこの節に `> 2026-11-06 の結果` として書く（上の判定の基準で判断する）
+- 録画（Videos の mp4）と `data\raw\gaze_TESTIDLE_*` は試験用。本番のデータと混ざらないよう、台帳には書かない
+
 ## 4. 予備実験データで新旧の解析を比べる（T3・T4）
 
 予備実験の1試合（`_proc.csv` を作ってあるもの）で：
