@@ -566,15 +566,37 @@ Get-ChildItem .\data\raw\gaze_TESTIDLE_*_log.txt | Sort-Object Name | ForEach-Ob
   $srv = ts '制御用HTTPサーバを起動しました'; $start = ts 'start要求を受理しました'
   $req = ts '録画開始要求を送信しました'; $conf = ts '録画開始を確認しました'
   $meta = $_.FullName -replace '_log\.txt$', '_meta.json'
-  $ss = (Get-Content $meta -Raw -Encoding UTF8 | ConvertFrom-Json).start_sync
-  [pscustomobject]@{ file = $_.Name; wait_s = [math]::Round(($start - $srv).TotalSeconds, 0)
-    req_to_confirm_ms = [math]::Round(($conf - $req).TotalMilliseconds, 0)
-    confirmed_ms = [math]::Round($ss.delta_sec_confirmed_based * 1000, 1); request_ms = [math]::Round($ss.delta_sec_request_based * 1000, 1) }
+  $ss = if (Test-Path $meta) { (Get-Content $meta -Raw -Encoding UTF8 | ConvertFrom-Json).start_sync } else { $null }
+  [pscustomobject]@{ file = $_.Name
+    wait_s = if ($srv -and $start) { [math]::Round(($start - $srv).TotalSeconds, 0) } else { $null }
+    req_to_confirm_ms = if ($req -and $conf) { [math]::Round(($conf - $req).TotalMilliseconds, 0) } else { $null }
+    confirmed_ms = if ($ss) { [math]::Round($ss.delta_sec_confirmed_based * 1000, 1) } else { $null }
+    request_ms = if ($ss) { [math]::Round($ss.delta_sec_request_based * 1000, 1) } else { $null }
+    note = if (-not $start) { '開始の合図なし' } elseif (-not $ss) { 'meta なし（正常に終了していない）' } else { '' } }
 } | Format-Table -AutoSize
 ```
 - [ ] 6行出て、`wait_s` が 30 前後と 360 前後に分かれている
 - [ ] 表を Claude に渡し、結果をこの節に `> 2026-11-06 の結果` として書く（上の判定の基準で判断する）
 - 録画（Videos の mp4）と `data\raw\gaze_TESTIDLE_*` は試験用。本番のデータと混ざらないよう、台帳には書かない
+- 開始の合図が無い回・正常に終わらなかった回は、空欄と note で分かるようにした（11/06 の初回は、`$start` が無いと待ち時間が −639 億秒と出て、meta が無いとエラーになった）
+
+> 2026-11-06 の結果（実験者、VALORANT はロビー、OBS は本番の設定。有効6回）：
+>
+> | 回 | 条件 | 待ち時間 | 要求→確認 | confirmed_based | request_based |
+> |---|---|---|---|---|---|
+> | 1（12:33） | 短 | 49 s | 19 ms | 24 ms | 5 ms |
+> | 2（12:37） | 長 | 364 s | 10 ms | 12 ms | 2 ms |
+> | 3（12:45） | 長 | 380 s | 9 ms | 12 ms | 3 ms |
+> | 4（12:55） | 短 | 29 s | 6 ms | 8 ms | 2 ms |
+> | 5（12:57） | 短 | 30 s | 7 ms | 10 ms | 3 ms |
+> | 6（16:21、やり直し） | 長 | 361 s | 7 ms | 9 ms | 2 ms |
+>
+> - **判定：待ち時間は原因ではない**（決めておいた基準「長い3回がすべて、短い3回のどれよりも 20 ms 以上長い」に当てはまらない。長い待ちの3回は 7〜10 ms で、
+>   短い待ちの3回 6〜19 ms と重なる）。6回とも期待範囲内（confirmed 8〜24 ms）。PL03 の 48 ms は待ち時間以外が原因で、今回は再現しなかった
+> - 一番長かったのはその日の最初の回（19 ms、待ち時間 49 s）。最初の録画だけ遅いのかは、この1回では分からない（観察として残す）
+> - 正常に終わらなかった回が2回（`gaze_TESTIDLE_1_idle360_20261106_123525`：開始の合図なし・meta なし、`gaze_TESTIDLE_6_idle360_20261106_125942`：同じ）。理由は未確認
+> - 弱点：各3回。6回目は約 3.5 時間後のやり直しで、交互の順番が崩れている。ロビーで試したので、試合中の負荷での遅れは否定できない
+> - 対応：手順も計測コードも変えない。本実験でも delta を控え続ける（4b の同期の控え）
 
 ## 4. 予備実験データで新旧の解析を比べる（T3・T4）
 
