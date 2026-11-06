@@ -11,7 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
-@pytest.mark.parametrize("name", ["requirements.txt", "requirements-dev.txt"])
+@pytest.mark.parametrize("name", ["requirements.txt", "requirements-dev.txt", "requirements-lock.txt"])
 def test_requirements_are_utf8_with_coding_line(name):
     data = (ROOT / name).read_bytes()
     data.decode("utf-8")  # UTF-8 として読めること

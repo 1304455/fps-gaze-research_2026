@@ -1,3 +1,4 @@
+import os
 import time
 import csv
 from datetime import datetime, timezone
@@ -41,7 +42,7 @@ def main():
     client_e = obs.EventClient(
         host="localhost",
         port=4455,
-        password="TtAKpdZt72WkF9ED",
+        password=os.environ.get("OBS_PASSWORD", ""),  # 平文のパスワードを削除（2026-11-06。git 履歴には残る）
     )
 
     # ここがポイント：デコレータではなく register() で登録する。[web:31][web:17]
