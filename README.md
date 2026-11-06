@@ -172,7 +172,9 @@ fps-gaze-research_2026/
 
 ### 4.1 必要なもの
 
-- Python 3.10 以降（Windows）
+- **Python 3.10（64bit）**（Windows）。3.11 以降や 32bit 版では使えない
+  - 理由：`tobii-research` は PyPI に wheel しか配布しておらず、1.10.2 以降（最新 2.1.0 まで）は **cp310 / win_amd64 だけ**。他のバージョンでは `Could not find a version that satisfies the requirement tobii-research (from versions: none)` になる
+  - 3.10 が無い場合は python.org の **Python 3.10.11 Windows installer (64-bit)**（3.10 系で最後の Windows インストーラー）を入れる
 - Tobii Pro Spark 本体 + Tobii Pro Eye Tracker Manager（キャリブレーション用）
 - OBS Studio 28 以降（OBS WebSocket v5 を内蔵）
 - ffmpeg（`render` で音声を保持する場合のみ。PATH に通しておく）
@@ -180,13 +182,18 @@ fps-gaze-research_2026/
 ### 4.2 インストール
 
 ```powershell
-py -3 -m venv .venv
+py -0p                                # インストール済みの Python の一覧。3.10 があるか確認
+py -3.10 -m venv .venv                # py -3 だと最新の Python（3.12 など）で作られるので、必ず 3.10 を指定
 .\.venv\Scripts\Activate.ps1
+python -c "import sys, struct; print(sys.version); print(struct.calcsize('P')*8, 'bit')"   # 3.10.x / 64 bit を確認
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-pip install -r requirements-dev.txt   # テストを実行する場合
+pip install -r requirements-dev.txt   # テストを実行する場合（pytest は requirements.txt には入っていない）
 python -m pytest                      # 解析ロジックのテスト（合成データ）
 ```
+
+> pip は全パッケージを解決してからインストールするため、1つでも解決できないと **何もインストールされない**。
+> `tobii-research` で失敗した venv には numpy・pandas も入っていないので、Python 3.10 で venv を作り直す。
 
 | 用途 | パッケージ |
 |---|---|
@@ -196,7 +203,7 @@ python -m pytest                      # 解析ロジックのテスト（合成�
 | AOI 位置確認 | `PyQt5` |
 
 > `keyboard` は **Vanguard 対策により使用禁止**です（8章参照）。インストールもしないでください。
-> 本実験前の計測コード凍結時に `pip freeze > requirements-lock.txt` でバージョンを固定します。
+> 本実験前の計測コード凍結時に `pip freeze > requirements-lock.txt` でバージョンを固定します。lock ファイルは Python 自体のバージョンを固定しないので、同時に `python --version` の結果も記録します。
 
 ### 4.3 OBS 側の設定
 

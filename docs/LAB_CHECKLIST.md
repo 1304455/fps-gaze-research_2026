@@ -8,12 +8,24 @@ Windows PowerShell 5.1 では `&&` が使えないので、連続実行は `; if
 
 ```powershell
 cd C:\Users\kawalab\...\fps-gaze-research_2026
-python -m venv .venv-check
+py -3.10 -m venv .venv-check
 .\.venv-check\Scripts\Activate.ps1
+python -c "import sys, struct; print(sys.version); print(struct.calcsize('P')*8, 'bit')"
 pip install -r requirements.txt -r requirements-dev.txt; if ($?) { python -m pytest }
 ```
+- [ ] venv の Python が **3.10.x / 64 bit**（`tobii-research` の wheel は cp310 / win_amd64 だけ。README 4.1）
 - [ ] `pip install` がエラーなく通る（T0 受け入れ基準）
 - [ ] `python -m pytest` が全件 passed
+
+> 2026-11-04 の結果：新しく作った venv で `pip install -r requirements.txt` が
+> `Could not find a version that satisfies the requirement tobii-research (from versions: none)` で失敗し、
+> 続く `python -m pytest` も `No module named pytest` で失敗した。
+> 原因（推定）：venv が Python 3.10（64bit）以外で作られていた。PyPI の `tobii-research` は 1.10.2 以降（最新 2.1.0 まで）
+> cp310 / win_amd64 の wheel しかなく、他のバージョンでは候補が0件になる。pip は1つでも解決できないと何もインストールしないため、
+> numpy・pandas・pytest も入らなかった（pytest はそもそも requirements-dev.txt 側で、このときは指定していなかった）。
+> 対応：`py -3.10 -m venv` で作り直す手順に変え、README の「Python 3.10 以降」を「3.10（64bit）だけ」に直した。
+> 弱点：失敗した venv の実際の Python のバージョンはまだ確認していない。作り直した venv での `pip install`・`pytest` の結果は未記録。
+> 計測で使っている既存の環境は、凍結（11/6）前なので作り直していない。
 
 ## 1. OBS パスワードの変更（必須・T0）
 
