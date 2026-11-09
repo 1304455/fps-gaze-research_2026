@@ -46,7 +46,7 @@
 | T5 | 一部対応 | `aoi_check.py`（視角サイズ表、calib との比較、フレーム描画）、AOI JSON に `display` 追加、`radius_deg` 対応、台帳の解像度チェック | ~~crosshair の半径~~（10/21：`radius_deg: 2.0` に変更） |
 | T6 | コード対応済み | `src/analysis/aggregate_sessions.py`（台帳の重複・空行・group の表記ゆれ・版の不一致、区間なしの結果、解析結果の無いセッションを検出。感度分析の集計で主解析を上書きしない）、`docs/templates/qc_criteria_template.json` | 除外基準：10/21 に6基準を合意（テンプレートに反映）。残り：分析時間の下限（ゲームモード次第）、coverage の下限（予備実験の分布を見て） |
 | T7 | 対応済み | `tests/`（143件） | — |
-| T8 | 一部決定（10/28） | 主検定は Brunner–Munzel。主要比較：ミニマップ・クロスヘア・下部HUDまとめ（credits を除く）、副次比較：health_armor・abilities・ammo_weapon | **多重比較の補正方法が未決**（本実験の解析まで）、上部HUDを主要比較に入れるか（予備実験の後）、近似版か並べ替え版か。スクリプトは未作成 |
+| T8 | 計画は決定（11/09、案Y は教授の確認待ち） | `docs/ANALYSIS_PLAN.md`：mid を含む全員でランクとの Spearman の順位相関（並べ替え検定）、主要6つ・副次3つで Holm、ρ と 95% 信頼区間。群の比較は記述のみ | スクリプトは未作成（ランクのディビジョンを読む処理、並べ替え検定、Holm、信頼区間、点の図。合成データの pytest 付き） |
 | T9 | 保留 | — | — |
 
 着手順の推奨：T0 → T7の土台 → T4 → T3 → T1 → T2 → T5 → T6 → T8。
