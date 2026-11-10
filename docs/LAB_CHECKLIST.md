@@ -872,6 +872,19 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 > - 購読開始から最初のサンプルまでは 3 セッションとも約 0.30 s で安定
 > - 11/06 追記：PL01 の2回目は confirmed 10 ms（要求→確認 8 ms）で範囲内。4セッション中、外れたのは PL03 の1回だけ
 
+> 2026-11-10 の結果（本実験 S01 の1試合目。降参で2試合した人。v5 のログと `_meta.json` の start_sync から）：
+>
+> | セッション | OBS / WebSocket | confirmed_based | request_based | 要求→確認 | first_sample.pc_time_sec | 範囲内 |
+> |---|---|---|---|---|---|---|
+> | S01 11/10 `gaze_S01_1_default_20261110_105325` | 未確認 | **45.0 ms** | 8.0 ms | **37 ms** | 約 0.300 s（offset +0.344557 s − 45.0 ms） | × |
+>
+> - **本実験で初めての期待範囲外**（予備実験の PL03 に続いて2例目）。型は PL03 と同じ：request_based はほぼ普段どおりで、OBS の録画開始の確認（RecordStateChanged STARTED）が返るまでが長い
+> - 起動から開始の合図までの待ち時間は 55 s と短い。11/06 の試験の結論（待ち時間は原因ではない）と矛盾しない
+> - 扱い：除外基準（同期が期待範囲内）により、このセッションは `qc_report` で除外候補になる（主解析から外し、感度分析＝`session_set: all` でのみ使う）。
+>   `auto-sync --verify` による目視での調整はしない（調整の刻みが 0.05 s で、ずれの大きさ約 26 ms より粗い。調整しても期待範囲外の判定は変わらない）
+> - S01 の2試合目 `gaze_S01_2_default_20261110_111148` の confirmed_based は未確認（同じ日の比較として後で足す）
+> - 弱点：外れの原因（OBS 側の何が確認を遅らせたか）は分かっていない。手順も計測コードも変えない（凍結後）。本実験でも delta を控え続ける
+
 ## 5. フレーム上の AOI 位置（T5）
 
 ```powershell
