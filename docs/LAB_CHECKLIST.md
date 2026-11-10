@@ -639,6 +639,15 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 - [ ] 同じ区間で、`gaze_pct` が旧版（archive\aoi_analysis-ver2.py を `_proc.csv` に適用）とほぼ一致する
 - [ ] `qc.json` の `time_base_comparison.interval_difference_sd_ms` を控える（決定事項4は 10/13 に system_time で合意済み。実プレイでも同じ傾向かの確認）
 - [ ] `fixations.csv` の `duration_sec` の分布を見る（I-DT の閾値が自分のデータで妥当かの確認）
+  > 2026-11-10 の決定（**結果を見る前に書いた基準**）：I-DT の閾値（最短 100 ms・分散 1°）の妥当性は、予備実験のアンレート（PL01〜PL03）の生存区間で確かめる（CLAUDE.md §2「注視検出」の「閾値は自分のデータで妥当性を確認する」）。本実験のデータ（S01 以降）は使わない。
+  > 主指標の Gaze % はサンプル単位で I-DT に依存しないので、影響を受けるのは副指標（探索的）と `aoi_fixation` の分類だけ。
+  > - A 注視時間の分布：参加者ごとの `duration_sec` の中央値・四分位と、最短付近（6〜7サンプル＝100〜117 ms）の割合
+  > - B 分散とノイズ：較正の検証の両眼平均の precision から見積もった、ノイズだけによる 100 ms の窓の分散と、`dispersion_deg` の分布を比べる
+  > - C 閾値の感度：分散 0.5 / 0.75 / 1.0 / 1.5 / 2.0° × 最短 60 / 100 / 150 ms で解析し直し（`--params` と `--output-dir` を分ける）、1分あたりの注視数、平均注視時間、注視に入った有効サンプルの割合、主要6 AOI の `aoi_fixation` の割合を比べる
+  > - D 目視（任意）：各参加者から 5 秒の場面を数か所ランダムに選び、scanpath を録画に重ねて見る
+  > - **見直しの目安**：A で最短付近の注視が 30% を超える参加者がいる／B でノイズの分散の見積もりが 1° の半分を超える／C で 1.0° から 0.75° または 1.5° に変えると、1分あたりの注視数か平均注視時間が 25% を超えて変わる
+  > - どれにも当たらなければ 100 ms・1° を変えない。当たっても、その場で閾値を変えずに選択肢を出して決め直す（本実験の集計前に記録を残す）
+  > - 限界：FPS では遅い追従眼球運動が多く、I-DT はそれを1つの注視にまとめることも、細切れにすることもある（Gaze % には影響しない）
 - [ ] 感度分析（距離 650 mm 固定）は出力先を分けて実行する（同じ出力先では条件の違う結果の上書きを拒否する）：
       `... --params .\src\aoi_detector\analysis_params_sensitivity_fixed650.json --output-dir .\data\processed\aoi_result_fixed650`。
       集計も `--results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650` で分ける
