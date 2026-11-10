@@ -371,6 +371,42 @@ class TestMetrics:
         assert math.isnan(bs.loc["credits", "ttff_sec"])
         assert bs.loc["credits", "ttff_censored"]
 
+    def test_ttff_excludes_revive_segments(self, aois):
+        """蘇生後の区間（start_reason=revive）は TTFF に使わない（2026-11-10 決定）。他の指標は通常どおり数える。"""
+        pts = hold(EMPTY, 30) + hold(MINIMAP, 30) + hold(EMPTY, 10) + hold(MINIMAP, 30)
+        raw = pd.DataFrame([
+            {"round": 1, "segment_type": "alive", "video_start_sec": 0.0, "video_end_sec": 60 * DT,
+             "end_reason": "death", "side": "attack", "notes": "", "start_reason": "buy_end"},
+            {"round": 1, "segment_type": "alive", "video_start_sec": 60 * DT, "video_end_sec": 101 * DT,
+             "end_reason": "round_end", "side": "attack", "notes": "", "start_reason": "revive"},
+        ])
+        seg = gm.segments_from_video_time(raw, 0.0, ["alive"])
+        res = run(pts, aois, segments=seg)
+        bs = res["metrics_by_segment"]
+        mm = bs[bs["aoi"] == "minimap"].set_index("segment_id")
+        assert mm.loc[0, "ttff_sec"] == pytest.approx(30 * DT)
+        assert not mm.loc[0, "ttff_excluded"]
+        assert math.isnan(mm.loc[1, "ttff_sec"])
+        assert mm.loc[1, "ttff_excluded"] and not mm.loc[1, "ttff_censored"]
+        assert mm.loc[1, "fixation_count"] == 1  # 蘇生後の区間の注視は数える
+        assert mm.loc[1, "start_reason"] == "revive"
+        # 注視の無い AOI でも、蘇生後の区間は打ち切りではなく「使わない」
+        cr = bs[bs["aoi"] == "credits"].set_index("segment_id")
+        assert cr.loc[0, "ttff_censored"] and not cr.loc[1, "ttff_censored"] and cr.loc[1, "ttff_excluded"]
+        ms = res["metrics_session"].set_index("aoi")
+        assert ms.loc["minimap", "ttff_sec_mean_uncensored"] == pytest.approx(30 * DT)
+        assert ms.loc["minimap", "ttff_excluded_segments"] == 1
+        assert ms.loc["credits", "ttff_censored_segments"] == 1
+        assert ms.loc["minimap", "fixation_count"] == 2
+        # 蘇生の前後の注視は別の区間なので、同じ AOI でも1つの訪問につながらない（再訪にも数えない）
+        assert ms.loc["minimap", "visit_count"] == 2 and ms.loc["minimap", "revisit_count"] == 0
+
+    def test_segments_without_start_reason_column_are_buy_end(self, aois):
+        seg = seg_table([(0.0, 61 * DT)])
+        assert seg["start_reason"].tolist() == ["buy_end"]
+        res = run(hold(MINIMAP, 60), aois, segments=seg)
+        assert not res["metrics_by_segment"]["ttff_excluded"].any()
+
     def test_session_aggregation_sums_counts_not_mean_of_ratios(self, aois):
         # 区間0：crosshair 100%（30サンプル）、区間1：crosshair 0%（90サンプル）
         pts = hold(CROSSHAIR, 30) + hold(EMPTY, 90)
