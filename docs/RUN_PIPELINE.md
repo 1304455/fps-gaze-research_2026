@@ -114,6 +114,51 @@ python -c "import json,sys; a=json.load(open(sys.argv[1],encoding='utf-8'))['act
   5. 2試合目も降参で終わっても、3試合目はしない（notes に `surrender=1`）
 - 集計（手順8）は、同じ `participant_id` の2試合を**サンプル数・時間を足してから**割合を出す（`participant_aoi_metrics.csv`、既存の動作）
 
+#### 2試合目で `--trial 2` を付け忘れたとき（2026-11-11 追加）
+
+**ファイル名は変えない**（`data\raw` を上書きしない原則。CSV・`_meta.json`・ログ・`_obs_sync.jsonl` は同じ名前でつながっていて、
+1つでも変え忘れると対応が切れる）。ファイル名・meta の `trial_id` が `1` のままでも解析には影響しない：
+- 2試合のファイル名は末尾の日時が違うので、`session_base` は別になる（台帳・区間ファイル・AOI 解析の出力はすべて `session_base` で照合する）
+- `trial_id` を読む解析コードは無い（v5 が meta に書くだけ）。参加者単位の合算は `participant_id` で行う
+- 試合の順番は、ファイル名の日時（と meta の `created_at_local`）で決まる
+
+やること：
+1. 2試合を手順3の「最新を取る」で選ばない（どちらも `gaze_<subj>_1_...` で、最新は常に2試合目）。下の手順で**日時を見て明示的に選ぶ**
+2. 台帳の2試合目の行の notes に、`trial=2` と付け忘れの事実を書く：
+   `trial=2;trial_arg_mistake=1;post=<post2 のファイル名>;surrender=<0/1>`（`trial_arg_mistake=1` は「計測時 `--trial 1` のまま。ファイル名・meta の trial_id は 1」の意味）
+3. LAB_CHECKLIST 4b に、どの参加者の、どのファイルかを記録する
+
+2試合を選ぶ（手順3の代わり。1試合ずつ、`$i` を変えて手順4〜7を2回通す）：
+```powershell
+$csvs = @(Get-ChildItem ".\data\raw\gaze_${subj}_*_default_*.csv" | Sort-Object Name)   # 名前の末尾が日時なので名前順＝時刻順
+$mp4s = @(Get-ChildItem "$env:USERPROFILE\Videos\*.mp4" | Sort-Object Name | Select-Object -Last 2)
+$csvs | ForEach-Object { $_.Name }; $mp4s | ForEach-Object { $_.Name }
+```
+- [ ] `$csvs` がちょうど2つ（今回の参加者の2試合だけ）。`$mp4s` の2つがその2試合の録画（OBS の録画名は録画開始の日時。
+  各録画の日時が、対応する CSV の日時の少し後〜数分後になっている。録画を後で別に撮っていたら `Select-Object -Last 2` で拾えないので、名前で指定する）
+
+```powershell
+$i = 0   # 0 = 1試合目、1 = 2試合目
+$csv  = $csvs[$i].FullName
+$base = [IO.Path]::GetFileNameWithoutExtension($csv)
+$mp4  = $mp4s[$i].FullName
+$sync = Join-Path (Split-Path $mp4) ((Get-Item $mp4).BaseName + "_sync.json")
+$csv, $base, $mp4, $sync   # 4つとも同じ試合のものか目で確認する
+```
+- 手順5の台帳の行で使う `$calib` と `$post`：
+  - 1試合目：`$calib` は試合前の較正、`$post` は `calib_${subj}-post_*.json`
+  - 2試合目：`$calib` は2試合目の前に使った較正（較正し直さなかったら1試合目と同じ）、`$post` は `calib_${subj}-post2_*.json`
+  ```powershell
+  $post = (Get-ChildItem ".\data\raw\calib_${subj}-post_*.json"  | Sort-Object Name | Select-Object -Last 1).FullName   # 1試合目
+  $post = (Get-ChildItem ".\data\raw\calib_${subj}-post2_*.json" | Sort-Object Name | Select-Object -Last 1).FullName   # 2試合目
+  ```
+- 手順5の `$notes` は試合ごとに組み立て直す（前の試合の値が残ったまま追記しない）：
+  ```powershell
+  $notes = "ETM相対角度12°;surrender=1;post=" + (Split-Path $post -Leaf)                                    # 1試合目（降参）
+  $notes = "ETM相対角度12°;trial=2;trial_arg_mistake=1;surrender=0;post=" + (Split-Path $post -Leaf)       # 2試合目（surrender は実際の値に）
+  ```
+- 1試合目を手順4〜7まで終えたら `$i = 1` にして、上の選択から繰り返す
+
 ## 3. ファイルの場所を変数にまとめる
 
 ```powershell
@@ -124,6 +169,8 @@ $sync = Join-Path (Split-Path $mp4) ((Get-Item $mp4).BaseName + "_sync.json")
 $calib, $csv, $base, $mp4, $sync   # 5つとも今回のセッションのものか目で確認する
 ```
 - OBS の録画の保存先がビデオフォルダ以外なら `$mp4` の行のパスを書き換える
+- **2試合した参加者は、この「最新を取る」選び方を使わない**（最新は常に2試合目なので、1試合目を処理するときに取り違える）。
+  手順2c の「2試合を選ぶ」で日時を見て選ぶ
 
 ## 4. 同期
 

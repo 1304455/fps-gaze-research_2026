@@ -885,6 +885,15 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 > - S01 の2試合目 `gaze_S01_2_default_20261110_111148` の confirmed_based は未確認（同じ日の比較として後で足す）
 > - 弱点：外れの原因（OBS 側の何が確認を遅らせたか）は分かっていない。手順も計測コードも変えない（凍結後）。本実験でも delta を控え続ける
 
+> 2026-11-11 の記録（本実験、1試合目が降参で2試合した参加者。**2試合目を `--trial 2` を付けずに計測した**）：
+>
+> - 2試合とも `gaze_<ID>_1_default_<日時>.csv` になり、2試合目の `_meta.json` の `trial_id` も `"1"`。参加者 ID と2つのファイル名は試合の処理のときにここへ書き足す（未記入）
+> - 扱い：**ファイル名・meta は直さない**（`data\raw` を上書きしない原則。CSV・meta・ログ・`_obs_sync.jsonl` が同じ名前でつながっていて、改名は対応を切る危険の方が大きい）。
+>   日時が違うので `session_base` は別になり、解析・集計は `session_base` と `participant_id` で照合する（`trial_id` を読む解析コードは無いことを確認）。
+>   台帳の2試合目の行の notes に `trial=2;trial_arg_mistake=1` を書き、試合の順番はファイル名の日時で決める
+> - 処理の注意：RUN_PIPELINE 手順3の「最新の CSV・mp4 を取る」では1試合目を取り違える → 手順2c の「2試合を選ぶ」で日時を見て明示的に選ぶ（同日に追加）
+> - 計測コードは変えない（凍結後。`--trial` の付け忘れは手順の問題で、データは壊れていない）。今後の2試合目は RUN_PIPELINE 2c のとおり `--trial 2` を付ける
+
 ## 5. フレーム上の AOI 位置（T5）
 
 ```powershell
