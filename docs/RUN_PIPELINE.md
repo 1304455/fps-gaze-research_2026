@@ -300,6 +300,12 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_dete
 ```
 - 主解析（75 ms）と比べるのは注視数・平均注視時間（副指標）。Gaze %・訪問・再訪は同じになるはず（200 ms 以下の欠測は主解析でも訪問をつなぐ）
 
+感度分析その3（I-DT の分散の閾値を 1.5° に。2026-11-11 決定、LAB_CHECKLIST 4）：
+```powershell
+python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_detector\valorant_hud_aoi_circular.json --segments ".\data\annotations\${base}_segments.csv" --sync $sync --manifest .\data\sessions_manifest.csv --params .\src\aoi_detector\analysis_params_sensitivity_disp15.json --output-dir .\data\processed\aoi_result_disp15
+```
+- 主解析（1.0°）と比べるのは副指標。Gaze % は同じになるはず（I-DT を使わない）
+
 - 1行版（主解析と感度分析。やり直しのときは末尾に ` --overwrite` を足す）：
   ```powershell
   python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_detector\valorant_hud_aoi_circular.json --segments ".\data\annotations\${base}_segments.csv" --sync $sync --manifest .\data\sessions_manifest.csv
@@ -356,7 +362,9 @@ if (-not (Test-Path .\data\qc_criteria.json)) { Copy-Item .\docs\templates\qc_cr
 python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json
 python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json --results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650
 python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json --results-dir .\data\processed\aoi_result_gap200 --out-dir .\data\processed\aggregate_gap200
+python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json --results-dir .\data\processed\aoi_result_disp15 --out-dir .\data\processed\aggregate_disp15
 ```
+- `qc_report` の `idt_noise_mark`（2026-11-11）：較正の精密度から見積もったノイズの分散が閾値の半分を超えたセッション。除外候補には入らない。`participant_aoi_metrics` の `session_set: excluding_flagged_and_idt_noise` が、これと除外候補を除いた副指標の感度分析。台帳の `calibration_file` が空のセッションは空欄（印の有無が分からない）
 - 出力先：`data\processed\aggregate\`
 - 台帳の `group` と `rank_current` が合わないと「エラー: 台帳の group がランクと合いません」で止まる → 台帳を直して再実行（`qc_report` に `rank_current`・`group_expected_from_rank` も出る）
 - [ ] `qc_report` で、今回のセッションが `has_result=True`、`calibration_passed` が埋まっている

@@ -677,7 +677,7 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
   >   - 注視の分散の中央値が全員 0.92〜0.93° なのは、I-DT が分散が閾値を超えるまで窓を広げる方式のためで、それ自体は異常ではない
   >   - 主指標の Gaze % は I-DT を使わないので、どの結果にも影響されない。影響するのは副指標（探索的）と `aoi_fixation` の分類
   > - 弱点：3人・4試合だけ。B の式は目安（独立な正規ノイズを仮定）。目安の数値（30% / 半分 / 25%）は 11/10 に決めた根拠の弱い値
-  > - [ ] 閾値をどうするかを決める（選択肢は会話で提示。決めたら CLAUDE.md §2「注視検出」と ANALYSIS_PLAN に書く）
+  > - [x] 閾値をどうするかを決める → **2026-11-11 決定（案1）**：主解析は 100 ms・1° のまま。分散 1.5° を副指標の感度分析に加え（0.75° は入れない）、ノイズの見積もりが閾値の半分を超えるセッションに印（`idt_noise_mark`）を付けて、除いた副指標も感度分析として出す。採らなかった案：1.5° に変える（1.5° の方が正しい根拠がない）、参加者ごとに閾値を変える（I-DT の標準から外れ、データを見てからの適応ルールになる）、何もしない。CLAUDE.md §2「注視検出」、ANALYSIS_PLAN §6
 - [ ] 感度分析（距離 650 mm 固定）は出力先を分けて実行する（同じ出力先では条件の違う結果の上書きを拒否する）：
       `... --params .\src\aoi_detector\analysis_params_sensitivity_fixed650.json --output-dir .\data\processed\aoi_result_fixed650`。
       集計も `--results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650` で分ける
