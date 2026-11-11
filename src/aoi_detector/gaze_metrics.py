@@ -185,7 +185,22 @@ def estimate_sample_dt(t: np.ndarray) -> float:
 # 2. 区間
 # ---------------------------------------------------------------------------
 
-SEGMENT_COLUMNS = ["round", "segment_type", "video_start_sec", "video_end_sec", "end_reason", "side", "notes"]
+SEGMENT_COLUMNS = ["round", "segment_type", "video_start_sec", "video_end_sec", "end_reason", "side", "notes",
+                   "start_reason"]
+# 区間の始まり方（2026-11-10 決定）。buy_end：購入フェーズ終了。revive：蘇生後の再開（同じラウンドの2つ目以降の区間）。
+# start_reason の列が無い区間ファイル（11/10 より前）と空欄は buy_end として読む（後方互換）
+START_REASONS = ("buy_end", "revive")
+DEFAULT_START_REASON = "buy_end"
+
+
+def normalize_start_reason(values: pd.Series) -> pd.Series:
+    """start_reason を正規化する（NaN・空欄 → buy_end）。未知の値はエラーにする（打ち間違いを黙って通さない）。"""
+    s = values.astype(object).where(values.notna(), DEFAULT_START_REASON).astype(str).str.strip()
+    s = s.where(s != "", DEFAULT_START_REASON)
+    bad = sorted(set(s) - set(START_REASONS))
+    if bad:
+        raise ValueError(f"区間ファイルの start_reason に未知の値があります: {bad}（使えるのは {list(START_REASONS)}）")
+    return s
 
 
 def segments_from_video_time(seg_df: pd.DataFrame, offset_sec: float, segment_types: list[str]) -> pd.DataFrame:
@@ -201,6 +216,7 @@ def segments_from_video_time(seg_df: pd.DataFrame, offset_sec: float, segment_ty
         if c not in seg.columns:
             seg[c] = np.nan
     seg = seg[seg["segment_type"].astype(str).isin(segment_types)].copy()
+    seg["start_reason"] = normalize_start_reason(seg["start_reason"])
     seg["video_start_sec"] = pd.to_numeric(seg["video_start_sec"], errors="raise")
     seg["video_end_sec"] = pd.to_numeric(seg["video_end_sec"], errors="raise")
     # NaN との比較はすべて False になり、下の「終了 <= 開始」の検査をすり抜けるので先に弾く
@@ -650,13 +666,19 @@ def metrics_by_segment(samples: pd.DataFrame, fixations: pd.DataFrame, visits: p
                 gaze_pct = np.nan
             else:
                 gaze_pct = 100.0 * n_in / denom if denom > 0 else np.nan
-            ttff = float(fc["start_sync_sec"].min() - seg.gaze_start_sec) if n_fix else np.nan
+            # TTFF は「ラウンドの生存の開始から」の指標なので、蘇生後の区間（起点が蘇生した時点）は使わない（2026-11-10 決定）
+            ttff_excluded = getattr(seg, "start_reason", DEFAULT_START_REASON) == "revive"
+            if ttff_excluded:
+                ttff = np.nan
+            else:
+                ttff = float(fc["start_sync_sec"].min() - seg.gaze_start_sec) if n_fix else np.nan
             rows.append({
                 "segment_id": sid,
                 "round": seg.round,
                 "segment_type": seg.segment_type,
                 "side": seg.side,
                 "end_reason": seg.end_reason,
+                "start_reason": getattr(seg, "start_reason", DEFAULT_START_REASON),
                 "segment_start_sync_sec": seg.gaze_start_sec,
                 "segment_end_sync_sec": seg.gaze_end_sec,
                 "segment_duration_sec": seg.gaze_end_sec - seg.gaze_start_sec,
@@ -675,7 +697,8 @@ def metrics_by_segment(samples: pd.DataFrame, fixations: pd.DataFrame, visits: p
                 "visit_count": n_visit,
                 "revisit_count": max(n_visit - 1, 0),
                 "ttff_sec": ttff,
-                "ttff_censored": n_fix == 0,
+                "ttff_censored": (n_fix == 0) and not ttff_excluded,
+                "ttff_excluded": ttff_excluded,
             })
     return pd.DataFrame(rows)
 
@@ -711,6 +734,7 @@ def metrics_session(by_segment: pd.DataFrame, cats: list[str]) -> pd.DataFrame:
             "revisit_count": int(c["revisit_count"].sum()),
             "ttff_sec_mean_uncensored": float(c["ttff_sec"].mean()) if c["ttff_sec"].notna().any() else np.nan,
             "ttff_censored_segments": int(c["ttff_censored"].sum()),
+            "ttff_excluded_segments": int(c["ttff_excluded"].sum()) if "ttff_excluded" in c else 0,
         })
     return pd.DataFrame(rows)
 

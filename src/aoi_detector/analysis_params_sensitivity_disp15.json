@@ -1,0 +1,14 @@
+{
+  "_comment": "感度分析用：I-DT の分散の閾値を 1.5° にする（主解析は 1.0°。2026-11-11 決定、LAB_CHECKLIST 4 の確認で 1.5° 側の変化が大きかったため）。変わるのは副指標と aoi_fixation の分類だけ（Gaze % は同じ）。それ以外は既定値と同じ。",
+  "eye_screen_distance_mm": 650.0,
+  "eye_screen_distance_source": "measured",
+  "idt_min_duration_ms": 100.0,
+  "idt_max_dispersion_deg": 1.5,
+  "max_gap_ms": 75.0,
+  "offscreen_in_denominator": true,
+  "duration_time_column": "system_time_stamp_us",
+  "segment_types": [
+    "alive"
+  ],
+  "visit_merge_max_gap_ms": 200.0
+}

@@ -51,7 +51,7 @@ from aoi_geometry import (  # noqa: E402
     aoi_config_content_sha256, find_overlapping_aois, get_display, load_aoi_config,
 )
 
-SCRIPT_VERSION = "3.2.0-idt-segments"
+SCRIPT_VERSION = "3.3.0-revive-segments"
 _PROJECT_ROOT = _THIS_DIR.parent.parent
 DEFAULT_OUTPUT_DIR = _PROJECT_ROOT / "data" / "processed" / "aoi_result"
 # 区間の行数が「区間長 ÷ サンプル間隔」のこの割合を下回ったら警告する（記録の範囲から区間がはみ出している疑い）。
@@ -424,7 +424,10 @@ def main(argv=None):
             "transition": "連続する2訪問のAOIが異なるとき1回。区間をまたがず、間の欠測が visit_merge_max_gap_ms を超える場合も数えない",
             "revisit_count": "区間ごとに max(訪問数 − 1, 0) を求め、セッションでは合計",
             "fixations_per_min": "注視数 / (区間内の有効サンプル数 × 名目サンプル間隔 / 60)",
-            "ttff_sec": "区間の開始から、そのAOIへの最初の注視の開始まで。注視が無い区間は NaN かつ ttff_censored=True",
+            "ttff_sec": "区間の開始から、そのAOIへの最初の注視の開始まで。注視が無い区間は NaN かつ ttff_censored=True。"
+                        "蘇生後の区間（start_reason=revive）は使わない（NaN かつ ttff_excluded=True。打ち切りには数えない）",
+            "segment_start_reason": "区間の始まり方。buy_end（購入フェーズ終了）／revive（蘇生後に自分の視点の HUD に戻った最初のフレーム。"
+                                    "同じラウンドの2つ目以降の区間で、前の区間とはつなげない）。列の無い区間ファイルは buy_end",
             "session_aggregation": "割合の平均ではなく、サンプル数・件数・時間を合算してから比率を出す",
             "sample_class": "aoi_fixation（AOI内のサンプルで、属する注視の AOI も同じ＝AOIへの注視）/ "
                             "aoi_nonfixation（AOI内だが注視に属さない、または属する注視の AOI が別）/ "

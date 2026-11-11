@@ -39,6 +39,9 @@ if str(_AOI_DIR) not in sys.path:
     sys.path.insert(0, str(_AOI_DIR))
 
 from gaze_metrics import read_csv_text  # noqa: E402
+from idt_threshold_check import (  # noqa: E402
+    NOISE_SHARE_OF_THRESHOLD_MAX, calib_binocular_precision, noise_dispersion_estimate, window_samples,
+)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_RESULTS_DIR = _PROJECT_ROOT / "data" / "processed" / "aoi_result"
@@ -271,6 +274,8 @@ def participant_metrics(metrics: pd.DataFrame, manifest: pd.DataFrame,
     """
     参加者 × AOI の集計。サンプル数・件数・時間を合算してから比率を出す。
     session_flags があれば exclude_candidate のセッションを除いた版も出す（元データは消さない）。
+    さらに idt_noise_mark の列があれば、除外候補と I-DT のノイズの印の両方を除いた版
+    （session_set: excluding_flagged_and_idt_noise）も出す。副指標の感度分析用（2026-11-11 決定）。
     """
     m = metrics.merge(manifest[["session_base", "participant_id", "group"]], on="session_base", how="left",
                       validate="many_to_one")
@@ -321,6 +326,15 @@ def participant_metrics(metrics: pd.DataFrame, manifest: pd.DataFrame,
             ex = agg(mk)
             ex.insert(0, "session_set", "excluding_flagged")
             out = pd.concat([out, ex], ignore_index=True)
+        if "idt_noise_mark" in session_flags.columns:
+            drop = (session_flags["exclude_candidate"].fillna(False).astype(bool)
+                    | session_flags["idt_noise_mark"].eq(True))
+            keep2 = session_flags.loc[~drop, "session_base"]
+            mk2 = m[m["session_base"].isin(keep2)]
+            if not mk2.empty:
+                ex2 = agg(mk2)
+                ex2.insert(0, "session_set", "excluding_flagged_and_idt_noise")
+                out = pd.concat([out, ex2], ignore_index=True)
     return out
 
 
@@ -347,6 +361,7 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
         calib_criteria = summ.get("criteria_version") or "legacy-per-eye"
         calib_acc_bin = summ.get("mean_accuracy_binocular_deg")
     measured_cm = (manifest_row or {}).get("eye_screen_distance_cm")
+    noise = idt_noise_mark(qc, calib_file)
 
     row = {
         "session_base": qc.get("session_base"),
@@ -376,6 +391,12 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
         "calibration_mean_accuracy_deg": calib_acc,
         "calibration_criteria_version": calib_criteria,
         "calibration_mean_accuracy_binocular_deg": calib_acc_bin,
+        "calibration_precision_binocular_median_deg": noise["precision_deg"],
+        "idt_window_samples": noise["window_samples"],
+        "idt_noise_dispersion_estimate_deg": noise["estimate_deg"],
+        "idt_noise_share_of_threshold": noise["share"],
+        # 除外の基準ではない（flag_ で始めない＝exclude_candidate に入れない）。副指標の感度分析で除く印（2026-11-11 決定）
+        "idt_noise_mark": noise["mark"],
         "resolution_ok": res.get("ok"),
         "pc_vs_system_interval_sd_ms": (dq.get("time_base_comparison") or {}).get("interval_difference_sd_ms"),
         "script_version": (qc.get("script") or {}).get("version"),
@@ -411,6 +432,29 @@ def qc_row(qc: dict, manifest_row: "dict | None", criteria: dict) -> dict:
     row["exclude_candidate"] = any(f is True for f in flags)
     row["n_criteria_evaluated"] = sum(f is not None for f in flags)
     return row
+
+
+def idt_noise_mark(qc: dict, calib_file: "Path | None") -> dict:
+    """
+    I-DT のノイズの印（2026-11-11 決定、CLAUDE.md §2「注視検出」）。較正の検証の両眼平均の精密度（RMS-S2S の中央値）から
+    ノイズだけによる最短の窓の分散を d2(n)·RMS-S2S で見積もり、そのセッションの分散の閾値の半分を超えたら印を付ける
+    （基準は LAB_CHECKLIST 4 の B と同じ。idt_threshold_check の関数をそのまま使う）。
+    除外には使わない。印の付いたセッションを除いた副指標を感度分析として出す（participant_metrics の session_set）。
+    較正ファイルが無い・古いときは None（印を付けたとも付けなかったとも言わない）。
+    """
+    out = {"precision_deg": None, "window_samples": None, "estimate_deg": None, "share": None, "mark": None}
+    params = qc.get("params") or {}
+    info = calib_binocular_precision(calib_file)
+    if not info["available"]:
+        return out
+    dt = (qc.get("data_quality") or {}).get("nominal_sample_interval_sec") or (1.0 / 60.0)
+    n = window_samples(float(params.get("idt_min_duration_ms", 100.0)), float(dt))
+    est = noise_dispersion_estimate(info["precision_rms_s2s_deg_median"], n)
+    thr = float(params.get("idt_max_dispersion_deg", 1.0))
+    share = est / thr
+    out.update(precision_deg=info["precision_rms_s2s_deg_median"], window_samples=n, estimate_deg=est, share=share,
+               mark=bool(share > NOISE_SHARE_OF_THRESHOLD_MAX))
+    return out
 
 
 def missing_result_row(manifest_row: dict) -> dict:

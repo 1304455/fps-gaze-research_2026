@@ -8,6 +8,8 @@ data/annotations/<session_base>_segments.csv を書き出す。aoi_analysis-ver3
 - 時刻は動画時刻（frame_idx / fps。gaze_visualizer_v3.py と同じ定義）で保存する。
   視線時刻への変換は解析時に sync の offset_sec で行う
 - 区間 = 「購入フェーズ終了」→「死亡」または「ラウンド終了」（生存中、segment_type=alive）
+- 蘇生されたとき（2026-11-10 決定）：死亡で区間を終えたあと、蘇生されて自分の視点の HUD に戻った最初のフレームで r を押すと、
+  同じラウンドの2つ目の区間（start_reason=revive）が始まる。終了は k / e。前の区間とはつなげない
 - 押したイベントは都度 <session_base>_segments_events.json に保存し、途中で閉じても再開できる
 - 区間 CSV は events JSON から作り直して保存する。既存の CSV を手で編集していた（events から作った内容と違う）場合は、
   最初の保存の前に <session_base>_segments.backup_<日時>.csv へ退避してから上書きする。
@@ -20,6 +22,7 @@ data/annotations/<session_base>_segments.csv を書き出す。aoi_analysis-ver3
   l / j        5秒進む / 戻る         L / J  30秒進む / 戻る
   ] / [        再生速度 ×2 / ×1/2（0.25〜4倍）
   b            購入フェーズ終了（区間開始。ラウンド番号は自動で +1）
+  r            蘇生後の再開（死亡の後だけ。同じラウンドの2つ目の区間を開始。ラウンド番号は進まない）
   k            死亡（区間終了 end_reason=death）
   e            ラウンド終了（区間終了 end_reason=round_end）
   t            次に開始する区間の攻守を切り替え（attack / defense）
@@ -52,7 +55,9 @@ from gaze_metrics import SEGMENT_COLUMNS as SEGMENT_CSV_COLUMNS  # noqa: E402
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_ANNOTATION_DIR = _PROJECT_ROOT / "data" / "annotations"
-EVENT_KINDS = {"buy_end": "購入フェーズ終了", "death": "死亡", "round_end": "ラウンド終了"}
+EVENT_KINDS = {"buy_end": "購入フェーズ終了", "death": "死亡", "round_end": "ラウンド終了", "revive": "蘇生後の再開"}
+# start_reason の列が無い区間 CSV（2026-11-10 より前の版のツールで保存したもの）の列
+LEGACY_SEGMENT_CSV_COLUMNS = [c for c in SEGMENT_CSV_COLUMNS if c != "start_reason"]
 SIDES = ("attack", "defense")
 
 
@@ -63,11 +68,13 @@ SIDES = ("attack", "defense")
 def events_to_segments(events: list[dict]) -> tuple[list[dict], list[str]]:
     """
     イベント列（時刻順でなくてもよい）から alive 区間の行を作る。
-    events: {"kind": "buy_end"|"death"|"round_end", "video_sec": float, "side": str} のリスト
+    events: {"kind": "buy_end"|"death"|"round_end"|"revive", "video_sec": float, "side": str} のリスト
+    revive は、直前の区間が death で閉じられているときだけ有効（同じラウンド・同じ攻守の区間を開く）。
     戻り値: (区間行のリスト, 警告メッセージのリスト)
     """
     rows, warnings = [], []
     open_seg = None
+    last_closed = None  # 直前に閉じた区間（revive がどのラウンドの続きかを決める）。b で開いた時点で無効になる
     round_no = 0
     for ev in sorted(events, key=lambda e: e["video_sec"]):
         kind, t = ev["kind"], float(ev["video_sec"])
@@ -78,7 +85,22 @@ def events_to_segments(events: list[dict]) -> tuple[list[dict], list[str]]:
                     f"ラウンド{open_seg['round']}の区間が閉じられないまま次の購入フェーズ終了（{t:.2f}s）"
                     "が来ました。この区間は出力しません。"
                 )
-            open_seg = {"round": round_no, "video_start_sec": t, "side": ev.get("side", "")}
+            last_closed = None
+            open_seg = {"round": round_no, "video_start_sec": t, "side": ev.get("side", ""),
+                        "start_reason": "buy_end"}
+        elif kind == "revive":
+            if open_seg is not None:
+                warnings.append(f"蘇生後の再開（{t:.2f}s）：ラウンド{open_seg['round']}の区間がまだ閉じていません"
+                                "（死亡 k の付け忘れ？）。無視します。")
+                continue
+            if last_closed is None or last_closed["end_reason"] != "death":
+                warnings.append(f"蘇生後の再開（{t:.2f}s）：直前に死亡（k）で閉じた区間がありません。無視します。")
+                continue
+            if t <= last_closed["video_end_sec"]:
+                warnings.append(f"蘇生後の再開（{t:.2f}s）：死亡より前か同時刻です。無視します。")
+                continue
+            open_seg = {"round": last_closed["round"], "video_start_sec": t, "side": last_closed["side"],
+                        "start_reason": "revive"}
         elif kind in ("death", "round_end"):
             if open_seg is None:
                 warnings.append(f"{EVENT_KINDS[kind]}（{t:.2f}s）の前に購入フェーズ終了がありません。無視します。")
@@ -86,7 +108,7 @@ def events_to_segments(events: list[dict]) -> tuple[list[dict], list[str]]:
             if t <= open_seg["video_start_sec"]:
                 warnings.append(f"ラウンド{open_seg['round']}：終了が開始以前です。無視します。")
                 continue
-            rows.append({
+            row = {
                 "round": open_seg["round"],
                 "segment_type": "alive",
                 "video_start_sec": round(open_seg["video_start_sec"], 4),
@@ -94,7 +116,10 @@ def events_to_segments(events: list[dict]) -> tuple[list[dict], list[str]]:
                 "end_reason": kind,
                 "side": open_seg["side"],
                 "notes": "",
-            })
+                "start_reason": open_seg["start_reason"],
+            }
+            rows.append(row)
+            last_closed = row
             open_seg = None
         else:
             raise ValueError(f"未知のイベント種別です: {kind}")
@@ -133,6 +158,13 @@ def existing_csv_differs(segments_csv: Path, events: list[dict]) -> bool:
         return True
     if header is None:  # 空のファイル
         return False
+    if list(header) == LEGACY_SEGMENT_CSV_COLUMNS:
+        # start_reason の列ができる前のツールで保存した CSV。蘇生の区間が無ければ中身は同じなので「違う」としない
+        # （違うとすると、退避と上書きの警告が毎回出る）。蘇生の区間があれば作り直す必要があるので「違う」
+        if any(r["start_reason"] != "buy_end" for r in rows):
+            return True
+        legacy_rows = [{k: v for k, v in r.items() if k != "start_reason"} for r in rows]
+        return _as_text_rows(existing) != _as_text_rows(legacy_rows)
     return list(header) != list(SEGMENT_CSV_COLUMNS) or _as_text_rows(existing) != _as_text_rows(rows)
 
 
@@ -254,7 +286,7 @@ def run_ui(video_path: Path, segments_csv: Path, events_json: Path, start_side: 
         lines = [
             f"t={t:9.3f}s  frame={frame_idx}/{n_frames}  fps={fps:.2f}  speed=x{speed:g}  {'PLAY' if playing else 'PAUSE'}",
             f"next side={side}  segments={len(rows)}  state={'ALIVE(open)' if open_now else '-'}",
-            "SPACE play  a/d 1f  j/l 5s  J/L 30s  [/] speed  b buy_end  k death  e round_end  t side  u undo  s save  q quit",
+            "SPACE play  a/d 1f  j/l 5s  J/L 30s  [/] speed  b buy_end  k death  e round_end  r revive  t side  u undo  s save  q quit",
         ]
         if events:
             last = sorted(events, key=lambda e: e["video_sec"])[-3:]
@@ -288,8 +320,8 @@ def run_ui(video_path: Path, segments_csv: Path, events_json: Path, start_side: 
             speed = min(4.0, speed * 2)
         elif ch == "[":
             speed = max(0.25, speed / 2)
-        elif ch in ("b", "k", "e"):
-            kind = {"b": "buy_end", "k": "death", "e": "round_end"}[ch]
+        elif ch in ("b", "k", "e", "r"):
+            kind = {"b": "buy_end", "k": "death", "e": "round_end", "r": "revive"}[ch]
             events.append({"kind": kind, "video_sec": round(t, 4), "frame_idx": frame_idx, "side": side})
             save_events(events_json, events, video_path, fps)
             message = f"記録: {EVENT_KINDS[kind]} @ {t:.3f}s"

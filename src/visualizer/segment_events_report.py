@@ -8,6 +8,8 @@ segment_annotator.py で付けたイベントを動画の時刻順に並べ、�
 表示するもの
 ------------
 - ラウンドの表：区間の開始（b）・終了（k/e）の動画時刻（秒と分:秒）、終了の理由、攻守、生存時間、前の b からの間隔
+  蘇生後の区間（r で開始。2026-11-10）は番号の後ろに r を付けて同じラウンドの行として出す。
+  ラウンドの数・b の間隔・攻守の判定には数えない
 - 問題の一覧
   * 終了が無い区間（次の b まで k/e が無い、または最後の区間が閉じていない）→ 区間 CSV に出力されない
   * 開始（b）が無い終了（k/e）→ 無視されている
@@ -40,7 +42,7 @@ from segment_annotator import (  # noqa: E402
     DEFAULT_ANNOTATION_DIR, EVENT_KINDS, events_to_segments, existing_csv_differs, load_events,
 )
 
-REPORT_VERSION = "1.0.0"
+REPORT_VERSION = "1.1.0"
 END_KINDS = ("death", "round_end")
 
 
@@ -55,8 +57,9 @@ def fmt_time(sec: "float | None") -> str:
 def build_rounds(events: list[dict]) -> list[dict]:
     """
     イベントを時刻順に並べ、ラウンド（b から次の k/e まで）の行にまとめる。events_to_segments と同じ規則で読む。
-    各行: {"round", "start", "end", "end_reason", "side", "problem"}
-      round は b の順番（b の無い終了は None）。problem は "no_end" / "no_start" / "end_before_start" / ""。
+    各行: {"round", "start", "end", "end_reason", "side", "problem", "revive"}
+      round は b の順番（b の無い終了は None）。revive は蘇生後の区間（r で開始）なら True。
+      problem は "no_end" / "no_start" / "end_before_start" / "revive_without_death" / ""。
     """
     rounds: list[dict] = []
     open_row = None
@@ -69,14 +72,25 @@ def build_rounds(events: list[dict]) -> list[dict]:
                 rounds.append(open_row)
             n += 1
             open_row = {"round": n, "start": t, "end": None, "end_reason": "", "side": ev.get("side", ""),
-                        "problem": ""}
+                        "problem": "", "revive": False}
+        elif kind == "revive":
+            # events_to_segments と同じ規則：直前の行が死亡で閉じた区間のときだけ、同じラウンドの区間を開く
+            prev = rounds[-1] if rounds else None
+            ok = (open_row is None and prev is not None and prev["problem"] == "" and prev["end_reason"] == "death"
+                  and prev["end"] is not None and t > prev["end"])
+            if not ok:
+                rounds.append({"round": None, "start": t, "end": None, "end_reason": "", "side": "",
+                               "problem": "revive_without_death", "revive": True})
+                continue
+            open_row = {"round": prev["round"], "start": t, "end": None, "end_reason": "", "side": prev["side"],
+                        "problem": "", "revive": True}
         elif kind in END_KINDS:
             if open_row is None:
                 rounds.append({"round": None, "start": None, "end": t, "end_reason": kind, "side": "",
-                               "problem": "no_start"})
+                               "problem": "no_start", "revive": False})
             elif t <= open_row["start"]:
                 rounds.append({"round": None, "start": None, "end": t, "end_reason": kind, "side": "",
-                               "problem": "end_before_start"})
+                               "problem": "end_before_start", "revive": False})
             else:
                 open_row.update(end=t, end_reason=kind)
                 rounds.append(open_row)
@@ -101,6 +115,8 @@ def find_issues(events: list[dict], rounds: list[dict], half_rounds: int = 12, g
             issues.append(f"{EVENT_KINDS[r['end_reason']]}（{r['end']:.2f}s）：前に購入フェーズ終了（b）がありません → 無視されています")
         elif r["problem"] == "end_before_start":
             issues.append(f"{EVENT_KINDS[r['end_reason']]}（{r['end']:.2f}s）：開始より前か同時刻です → 無視されています")
+        elif r["problem"] == "revive_without_death":
+            issues.append(f"蘇生後の再開（{r['start']:.2f}s）：直前に死亡（k）で閉じた区間がありません → 無視されています")
 
     # 二重押し
     by_time = sorted(events, key=lambda e: e["video_sec"])
@@ -109,7 +125,8 @@ def find_issues(events: list[dict], rounds: list[dict], half_rounds: int = 12, g
             issues.append(f"{EVENT_KINDS[a['kind']]}が {a['video_sec']:.2f}s と {b['video_sec']:.2f}s に続けてあります（二重押しの可能性）")
 
     # ラウンドが丸ごと抜けている可能性（b と b の間隔）
-    starts = [r for r in rounds if r["start"] is not None]
+    # ラウンドの数・b の間隔・攻守は b で始まる区間だけで見る（蘇生後の区間は同じラウンドの続き）
+    starts = [r for r in rounds if r["start"] is not None and not r.get("revive")]
     gaps = [(prev, cur, cur["start"] - prev["start"]) for prev, cur in zip(starts, starts[1:])]
     if len(gaps) >= 3:
         med = statistics.median(g for _, _, g in gaps)
@@ -137,7 +154,7 @@ def find_issues(events: list[dict], rounds: list[dict], half_rounds: int = 12, g
 
 
 def side_changes(rounds: list[dict]) -> list[str]:
-    sided = [r for r in rounds if r["start"] is not None and r["side"]]
+    sided = [r for r in rounds if r["start"] is not None and r["side"] and not r.get("revive")]
     if not sided:
         return []
     out = [f"ラウンド{sided[0]['round']}〜：{sided[0]['side']}"]
@@ -156,13 +173,15 @@ def format_report(events: list[dict], segments_csv: "Path | None" = None, half_r
     header = f"{'No':>3}  {'開始 b [s] (分:秒)':<20}  {'終了 k/e [s] (分:秒)':<20}  {'理由':<9}  {'攻守':<7}  {'生存[s]':>7}  {'b間隔[s]':>8}  問題"
     lines.append(header)
     prev_start = None
-    problem_label = {"no_end": "終了なし", "no_start": "開始なし", "end_before_start": "終了が開始以前", "": ""}
+    problem_label = {"no_end": "終了なし", "no_start": "開始なし", "end_before_start": "終了が開始以前",
+                     "revive_without_death": "死亡の無い蘇生", "": ""}
     for r in rounds:
         alive = f"{r['end'] - r['start']:.1f}" if r["start"] is not None and r["end"] is not None else "-"
-        gap = f"{r['start'] - prev_start:.1f}" if r["start"] is not None and prev_start is not None else "-"
-        if r["start"] is not None:
+        is_b = r["start"] is not None and not r.get("revive")
+        gap = f"{r['start'] - prev_start:.1f}" if is_b and prev_start is not None else "-"
+        if is_b:
             prev_start = r["start"]
-        no = str(r["round"]) if r["round"] is not None else "-"
+        no = (str(r["round"]) if r["round"] is not None else "-") + ("r" if r.get("revive") else "")
         lines.append(f"{no:>3}  {fmt_time(r['start']):<20}  {fmt_time(r['end']):<20}  {r['end_reason'] or '-':<9}  "
                      f"{r['side'] or '-':<7}  {alive:>7}  {gap:>8}  {problem_label[r['problem']]}")
 

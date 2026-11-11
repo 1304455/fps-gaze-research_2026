@@ -232,3 +232,74 @@ def test_unranked_and_peak_difference_are_warnings(capsys):
     assert errors == []
     assert any("rank_peak『Gold3』だと group は mid" in w for w in warnings)
     assert any("未ランク" in w for w in warnings)
+
+
+# ---------------------------------------------------------------------------
+# I-DT のノイズの印（2026-11-11 決定。除外には使わず、副指標の感度分析で除く）
+# ---------------------------------------------------------------------------
+
+def _calib(tmp, name, precision):
+    p = tmp / f"calib_{name}.json"
+    p.write_text(json.dumps({"summary": {"passed": True},
+                             "validation_points": [{"binocular_avg": {"precision_rms_s2s_deg": precision}}] * 3}),
+                 encoding="utf-8")
+    return str(p)
+
+
+def test_idt_noise_mark_is_not_an_exclusion_and_has_its_own_session_set(setup):
+    tmp, res, _ = setup
+    # s_a：精密度 0.25° → 見積もり 2.534×0.25 ≈ 0.63°（閾値 1° の半分を超える）→ 印。s_b：0.10° → 0.25° → 印なし
+    m = _manifest_with(tmp, [
+        {"session_base": "s_a", "participant_id": "P1", "group": "low", "calibration_file": _calib(tmp, "a", 0.25)},
+        {"session_base": "s_b", "participant_id": "P1", "group": "low", "calibration_file": _calib(tmp, "b", 0.10)},
+    ])
+    out = tmp / "out"
+    agg.main(["--results-dir", str(res), "--manifest", str(m), "--out-dir", str(out)])
+    qc = pd.read_csv(out / "qc_report.csv").set_index("session_base")
+    assert qc.loc["s_a", "idt_noise_mark"] and not qc.loc["s_b", "idt_noise_mark"]
+    assert qc.loc["s_a", "idt_noise_dispersion_estimate_deg"] == pytest.approx(2.534 * 0.25)
+    assert qc.loc["s_a", "idt_window_samples"] == 6
+    assert not qc["exclude_candidate"].any()  # 印は除外候補にしない
+    assert not any(c.startswith("flag_idt") for c in qc.columns)
+    p = pd.read_csv(out / "participant_aoi_metrics.csv")
+    sets = set(p["session_set"])
+    assert {"all", "excluding_flagged", "excluding_flagged_and_idt_noise"} <= sets
+    noise = p[(p["session_set"] == "excluding_flagged_and_idt_noise") & (p["aoi"] == "crosshair")].iloc[0]
+    assert noise["gaze_pct"] == pytest.approx(100.0 * 10 / 120)  # s_b だけ
+    assert noise["n_sessions"] == 1
+
+
+def test_idt_noise_mark_unknown_without_calibration(setup):
+    tmp, res, manifest = setup
+    out = tmp / "out"
+    agg.main(["--results-dir", str(res), "--manifest", str(manifest), "--out-dir", str(out)])
+    qc = pd.read_csv(out / "qc_report.csv")
+    assert qc["idt_noise_mark"].isna().all()  # 較正が無ければ「印なし」とは言わない
+    p = pd.read_csv(out / "participant_aoi_metrics.csv")
+    # 印が分からないセッションは除かない（excluding_flagged と同じ中身になる）
+    a = p[(p["session_set"] == "excluding_flagged") & (p["aoi"] == "crosshair")]["gaze_pct"].tolist()
+    b = p[(p["session_set"] == "excluding_flagged_and_idt_noise") & (p["aoi"] == "crosshair")]["gaze_pct"].tolist()
+    assert a == b
+
+
+def test_idt_noise_mark_uses_the_threshold_of_that_run():
+    """感度分析（1.5°）の結果では、その閾値の半分（0.75°）と比べる。"""
+    qc = {"params": {"idt_min_duration_ms": 100.0, "idt_max_dispersion_deg": 1.5},
+          "data_quality": {"nominal_sample_interval_sec": 1 / 60}}
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as d:
+        c = _calib(Path(d), "x", 0.25)
+        r = agg.idt_noise_mark(qc, Path(c))
+    assert r["estimate_deg"] == pytest.approx(0.6335, abs=1e-3)
+    assert r["share"] == pytest.approx(0.6335 / 1.5, abs=1e-3)
+    assert r["mark"] is False
+
+
+def test_disp15_params_differ_from_default_only_in_dispersion():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "src" / "aoi_detector"
+    load = lambda n: {k: v for k, v in json.loads((root / n).read_text(encoding="utf-8")).items() if k != "_comment"}
+    d, s = load("analysis_params_default.json"), load("analysis_params_sensitivity_disp15.json")
+    assert {k for k in d if d[k] != s.get(k)} == {"idt_max_dispersion_deg"}
+    assert s["idt_max_dispersion_deg"] == 1.5

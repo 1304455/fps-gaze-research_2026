@@ -94,3 +94,28 @@ def test_csv_status(tmp_path):
     events2 = events[:-1]
     assert "イベントから作った内容と違います" in rep.format_report(events2, csv_path)
     json.loads(ev_path.read_text(encoding="utf-8"))
+
+
+def test_revive_rows_do_not_count_as_rounds():
+    """蘇生後の区間（r）は同じラウンドの行として出し、ラウンド数・b の間隔・攻守の判定には数えない。"""
+    events = full_match()
+    # ラウンド3（死亡 @ 380）の後に蘇生して、ラウンド終了まで生き残る
+    events += [ev("revive", 385.0), ev("round_end", 410.0)]
+    rounds = rep.build_rounds(events)
+    revive_rows = [r for r in rounds if r["revive"]]
+    assert [(r["round"], r["start"], r["end"], r["problem"]) for r in revive_rows] == [(3, 385.0, 410.0, "")]
+    assert rep.find_issues(events, rounds, expected_rounds=24) == []
+    text = rep.format_report(events)
+    assert "\n 3r  " in text
+    rows, _ = sa.events_to_segments(events)
+    ok = [r for r in rounds if r["problem"] == ""]
+    assert [(r["round"], r["start"], r["end"]) for r in ok] == \
+        [(r["round"], r["video_start_sec"], r["video_end_sec"]) for r in rows]
+
+
+def test_revive_without_death_is_flagged():
+    events = full_match(n_rounds=3, half=12)
+    events += [ev("buy_end", 500.0), ev("round_end", 540.0), ev("revive", 545.0)]
+    rounds = rep.build_rounds(events)
+    issues = rep.find_issues(events, rounds)
+    assert any("蘇生後の再開" in s and "無視" in s for s in issues)

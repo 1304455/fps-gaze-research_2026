@@ -4,7 +4,7 @@
 研究室PC（Windows + PowerShell）で、**同じ PowerShell ウィンドウで上から順に**実行する前提。
 途中で作る変数（`$csv` など）を後の手順で使うので、ウィンドウを閉じたら手順3からやり直す。
 
-対応するバージョン：calibrate_validate 1.10.0 / apply_calibration 1.0.0 / v5 5.1.1 / aoi_analysis-ver3 3.2.0。
+対応するバージョン：calibrate_validate 1.10.0 / apply_calibration 1.0.0 / v5 5.1.1 / aoi_analysis-ver3 3.3.0。
 ETM の画面設定などの決定事項は CLAUDE.md §2、実機での検証結果は LAB_CHECKLIST.md を参照。
 
 ---
@@ -246,6 +246,7 @@ python .\src\visualizer\segment_annotator.py $mp4 --session-base $base --start-s
 | `b` | 購入フェーズ終了（区間の開始） |
 | `k` | 死亡（区間の終了） |
 | `e` | ラウンド終了（区間の終了） |
+| `r` | 蘇生後の再開（死亡 `k` の後だけ。同じラウンドの2つ目の区間を開始。ラウンド番号は進まない。2026-11-10） |
 | `t` | 次の区間の攻守を切り替える（ハーフが変わったとき） |
 | `u` | 直前の操作を取り消す |
 | `s` | 保存 |
@@ -272,12 +273,18 @@ python .\src\visualizer\segment_annotator.py $mp4 --session-base $base --start-s
 | ver3（解析） | 区間 `[開始, 終了)` に入るサンプルに `segment_id` を付ける。区間外は行を消さず `out_of_segment` として残す。注視・訪問・遷移は区間の境界で切る |
 | ver3（QC） | `qc.json` に区間数、分析時間（`analysis_time_sec`）、区間ごとの有効率と coverage（区間が記録の外にはみ出していないか）、サンプル0件の区間を出す |
 
-#### イベントの定義（案。卒論の方法の章に書く。決めたら CLAUDE.md §2 に移す）
+#### イベントの定義（2026-11-10 決定。卒論の方法の章に書く。CLAUDE.md §2「生存区間の切り出し」）
 - **購入フェーズ終了（`b`）**：画面上部のタイマーが、購入フェーズのカウントダウンからラウンドの残り時間に切り替わった**最初のフレーム**（バリアが消える時点）
 - **死亡（`k`）**：自分が倒され、画面が死亡時の表示に切り替わった**最初のフレーム**
 - **ラウンド終了（`e`）**：生き残ったままラウンドが終わったとき、ラウンドの勝敗の表示が出た**最初のフレーム**（その後に動ける時間は使わない）
-- **蘇生されたとき**（セージのリザレクション、クローブの自己蘇生など）：**区間は最初の死亡で終える**。蘇生後の時間は使わない
-  （ツールは1ラウンド1区間が前提で、蘇生後に `b` を押すとラウンド番号が1つ進んでしまう）
+- **蘇生されたとき**（セージのリザレクション、クローブの自己蘇生など）：**蘇生後も使う**（2026-11-10 決定。10/28 の案「最初の死亡で終える」から変更）。
+  最初の死亡で1つ目の区間を終え、蘇生後を同じラウンドの2つ目の区間にする（2つの区間はつなげない。注視・訪問・遷移は区間の境界で切れる）。
+  2つ目の区間の終了は、2回目の死亡またはラウンド終了（上と同じ定義）
+  - **蘇生後の再開（`r`）**：蘇生されて、自分の視点の画面（HUD）に戻った最初のフレーム（2026-11-10 決定）。`b` ではなく `r` を押す（`b` だとラウンド番号が1つ進む）
+  - `r` は直前の区間が死亡（`k`）で閉じているときだけ有効。それ以外は警告を出して無視する。攻守は蘇生前の区間を引き継ぐ
+  - 区間 CSV の `start_reason` 列が `revive` になる（`b` の区間は `buy_end`。11/10 より前の CSV には列が無く、`buy_end` として読む）
+  - **TTFF には使わない**（起点が蘇生した時点になり、ラウンドの開始からの時間と意味が変わるため。2026-11-10 決定）。Gaze %・注視・訪問などは通常どおり数える
+  - 確認ツール（`segment_events_report.py`）では番号の後ろに `r` が付き（例 `5r`）、ラウンド数・`b` の間隔・攻守の判定には数えない
 - 切断・再接続などで録画が乱れたラウンドは区間を付けず、台帳の notes にラウンド番号を書く
 - 見つけ方：`l` / `L`（5秒・30秒送り）で近くまで行き、`a` / `d`（1コマ）で切り替わりのフレームに合わせてからキーを押す
 
@@ -350,6 +357,12 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_dete
 ```
 - 主解析（75 ms）と比べるのは注視数・平均注視時間（副指標）。Gaze %・訪問・再訪は同じになるはず（200 ms 以下の欠測は主解析でも訪問をつなぐ）
 
+感度分析その3（I-DT の分散の閾値を 1.5° に。2026-11-11 決定、LAB_CHECKLIST 4）：
+```powershell
+python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_detector\valorant_hud_aoi_circular.json --segments ".\data\annotations\${base}_segments.csv" --sync $sync --manifest .\data\sessions_manifest.csv --params .\src\aoi_detector\analysis_params_sensitivity_disp15.json --output-dir .\data\processed\aoi_result_disp15
+```
+- 主解析（1.0°）と比べるのは副指標。Gaze % は同じになるはず（I-DT を使わない）
+
 - 1行版（主解析と感度分析。やり直しのときは末尾に ` --overwrite` を足す）：
   ```powershell
   python .\src\aoi_detector\aoi_analysis-ver3.py --input $csv --aoi .\src\aoi_detector\valorant_hud_aoi_circular.json --segments ".\data\annotations\${base}_segments.csv" --sync $sync --manifest .\data\sessions_manifest.csv
@@ -406,7 +419,9 @@ if (-not (Test-Path .\data\qc_criteria.json)) { Copy-Item .\docs\templates\qc_cr
 python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json
 python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json --results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650
 python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json --results-dir .\data\processed\aoi_result_gap200 --out-dir .\data\processed\aggregate_gap200
+python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.csv --qc-criteria .\data\qc_criteria.json --results-dir .\data\processed\aoi_result_disp15 --out-dir .\data\processed\aggregate_disp15
 ```
+- `qc_report` の `idt_noise_mark`（2026-11-11）：較正の精密度から見積もったノイズの分散が閾値の半分を超えたセッション。除外候補には入らない。`participant_aoi_metrics` の `session_set: excluding_flagged_and_idt_noise` が、これと除外候補を除いた副指標の感度分析。台帳の `calibration_file` が空のセッションは空欄（印の有無が分からない）
 - 出力先：`data\processed\aggregate\`
 - 台帳の `group` と `rank_current` が合わないと「エラー: 台帳の group がランクと合いません」で止まる → 台帳を直して再実行（`qc_report` に `rank_current`・`group_expected_from_rank` も出る）
 - [ ] `qc_report` で、今回のセッションが `has_result=True`、`calibration_passed` が埋まっている
