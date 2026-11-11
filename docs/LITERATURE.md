@@ -1,7 +1,7 @@
 # 文献台帳（引用の段階）
 
 - 状態：確定版（2026-11-10）
-- 基準の commit：`bb0ee74`（ブランチ `claude/nice-brahmagupta-kh2us0`。`docs/GLOSSARY.md` と同じ）
+- 基準の commit：`82c6aae`（ブランチ `claude/nice-brahmagupta-kh2us0`。`docs/GLOSSARY.md` と同じ）
 - 置き場所：`docs/LITERATURE.md`（公開リポジトリ）。**入れるのは書誌・ページ・段階・短い引用・注意だけ**。長い抜き書きと PDF は claude.ai の Project に置く
 - この台帳に無い文献は、卒論で引用しない。足すときは、書誌を確認してから、まずここに行を足す
 
@@ -29,7 +29,7 @@
 | ρ の信頼区間の標準誤差 | Bonett & Wright (2000) | — | 3 |
 | 多重比較の補正 | Holm (1979) | — | 3 |
 | 注視の定義（I-DT の方法） | Salvucci & Goldberg (2000) | — | 3 |
-| I-DT の閾値（最短 100 ms、分散 1°） | 閾値の範囲：Blignaut (2009) | 予備実験（PL01〜PL03）での妥当性の確認。手順と見直しの目安は `docs/LAB_CHECKLIST.md` 4（結果を見る前に記録）。確認が終わるまで、方法の章の「閾値の妥当性」の段落は【予備実験の確認待ち】 | 3 |
+| I-DT の閾値（最短 100 ms、分散 1°） | 閾値の範囲：Blignaut (2009) | 予備実験（PL01〜PL03）での妥当性の確認（`docs/LAB_CHECKLIST.md` 4。目安は結果を見る前に記録、2026-11-11 に実行・決定） | 3 |
 | 注視を分ける欠測 75 ms（主解析の `max_gap_ms`） | Olsen (2012)〔メーカー文書・非査読〕：Tobii I-VT の gap fill-in の既定値 | 参加者ごとの欠測の頻度（`missing_gaps`）と、200 ms の感度分析 | 3 |
 | クロスヘアの半径 2.0° | 中心窩の大きさ（約 2°）：Holmqvist et al. (2011) | 正確度の余裕（0.4〜1°）：自分の較正の結果（`docs/LAB_CHECKLIST.md` 2c） | 3 |
 | accuracy と precision の定義 | Holmqvist et al. (2011) | — | 3 |
