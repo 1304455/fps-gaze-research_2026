@@ -892,7 +892,11 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
 >   日時が違うので `session_base` は別になり、解析・集計は `session_base` と `participant_id` で照合する（`trial_id` を読む解析コードは無いことを確認）。
 >   台帳の2試合目の行の notes に `trial=2;trial_arg_mistake=1` を書き、試合の順番はファイル名の日時で決める
 > - 処理の注意：RUN_PIPELINE 手順3の「最新の CSV・mp4 を取る」では1試合目を取り違える → 手順2c の「2試合を選ぶ」で日時を見て明示的に選ぶ（同日に追加）
+> - 同じ参加者で、**2試合目の後の検証も subject を `<ID>-post2` にせず `<ID>-post` のまま撮った**（`calib_<ID>-post_*.json` が2つ）。
+>   これもファイル名は直さず、日時の順番（1試合目の CSV → post 1つ目 → 2試合目の CSV → post 2つ目）で対応を決める。台帳の2試合目の notes に `post_subject_mistake=1`。
+>   手順2c の `$post` の選び方（最新を取る）では1試合目で2試合目の post を取るので、日時で選ぶ手順を同日に追加
 > - 計測コードは変えない（凍結後。`--trial` の付け忘れは手順の問題で、データは壊れていない）。今後の2試合目は RUN_PIPELINE 2c のとおり `--trial 2` を付ける
+> - 弱点：2試合目の名前の付け忘れが2つ続いた。2c の手順は文で書いてあるだけで、2試合目に入るときに確かめる場面が無い。次に2試合目をするときは、2c の 2.・3. を声に出して確認してからコマンドを打つ
 
 ## 5. フレーム上の AOI 位置（T5）
 

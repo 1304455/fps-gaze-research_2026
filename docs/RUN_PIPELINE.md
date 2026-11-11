@@ -152,10 +152,20 @@ $csv, $base, $mp4, $sync   # 4つとも同じ試合のものか目で確認す�
   $post = (Get-ChildItem ".\data\raw\calib_${subj}-post_*.json"  | Sort-Object Name | Select-Object -Last 1).FullName   # 1試合目
   $post = (Get-ChildItem ".\data\raw\calib_${subj}-post2_*.json" | Sort-Object Name | Select-Object -Last 1).FullName   # 2試合目
   ```
+- 2試合目の後の検証も `${subj}-post` のまま撮ってしまったとき（2026-11-11 追加）：**ファイル名は変えない**（`-post` の名前を読むコードは無い）。
+  `calib_${subj}-post_*.json` が2つになるので、上の「最新を取る」は使わず、日時の順番で選ぶ。CSV と並べて、順番が
+  「1試合目の CSV → post の1つ目 → 2試合目の CSV → post の2つ目」になっていることを確かめる：
+  ```powershell
+  $posts = @(Get-ChildItem ".\data\raw\calib_${subj}-post_*.json" | Sort-Object Name)
+  @($csvs) + @($posts) | Sort-Object { $_.Name -replace '^.*_(\d{8}_\d{6})\..*$', '$1' } | ForEach-Object { $_.Name }
+  $post = $posts[$i].FullName   # $i は上の試合の番号（0 = 1試合目、1 = 2試合目）
+  ```
+  - [ ] `$posts` がちょうど2つで、並べた順番が上のとおり（較正の失敗などで post を撮り直していたら3つ以上になる。そのときは名前で指定する）
+  - 台帳の2試合目の notes に `post_subject_mistake=1` を足す（「2試合目の後の検証も subject `-post` のまま」の意味）
 - 手順5の `$notes` は試合ごとに組み立て直す（前の試合の値が残ったまま追記しない）：
   ```powershell
   $notes = "ETM相対角度12°;surrender=1;post=" + (Split-Path $post -Leaf)                                    # 1試合目（降参）
-  $notes = "ETM相対角度12°;trial=2;trial_arg_mistake=1;surrender=0;post=" + (Split-Path $post -Leaf)       # 2試合目（surrender は実際の値に）
+  $notes = "ETM相対角度12°;trial=2;trial_arg_mistake=1;surrender=0;post=" + (Split-Path $post -Leaf)       # 2試合目（surrender は実際の値に。post も -post で撮ったら ;post_subject_mistake=1 を足す）
   ```
 - 1試合目を手順4〜7まで終えたら `$i = 1` にして、上の選択から繰り返す
 
