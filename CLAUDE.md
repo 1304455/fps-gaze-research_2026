@@ -84,6 +84,7 @@
          → data/annotations/<session_base>_segments.csv（動画時刻。行削除による区間除外は廃止）
 [AOI解析] src/aoi_detector/aoi_analysis-ver3.py (3.3.0-revive-segments。3.3.0 で蘇生後の区間に対応し、TTFF から除外) --input <csv> --aoi ... --segments ... --sync <*_sync.json> --manifest ...
          → data/processed/aoi_result/<session_base>/（I-DT 注視検出。ロジック本体は gaze_metrics.py / aoi_geometry.py）
+[I-DT の確認] src/analysis/idt_threshold_check.py (1.0.0) 予備実験（PL〜）の ver3 の結果から閾値を振って解析し直し、LAB_CHECKLIST 4 の目安で判定 → data/processed/idt_check/
 [集計]   src/analysis/aggregate_sessions.py --manifest data/sessions_manifest.csv → data/processed/aggregate/
          （感度分析は --results-dir aoi_result_fixed650 --out-dir aggregate_fixed650。区間なしの結果は既定で合算しない）
 [台帳]   data/sessions_manifest.csv（実験者が記入。テンプレートは docs/templates/）

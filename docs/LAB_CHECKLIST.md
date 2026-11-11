@@ -648,6 +648,14 @@ python .\src\aoi_detector\aoi_analysis-ver3.py --input .\data\raw\<session_base>
   > - **見直しの目安**：A で最短付近の注視が 30% を超える参加者がいる／B でノイズの分散の見積もりが 1° の半分を超える／C で 1.0° から 0.75° または 1.5° に変えると、1分あたりの注視数か平均注視時間が 25% を超えて変わる
   > - どれにも当たらなければ 100 ms・1° を変えない。当たっても、その場で閾値を変えずに選択肢を出して決め直す（本実験の集計前に記録を残す）
   > - 限界：FPS では遅い追従眼球運動が多く、I-DT はそれを1つの注視にまとめることも、細切れにすることもある（Gaze % には影響しない）
+  > - **実行（2026-11-11、`src/analysis/idt_threshold_check.py` 1.0.0）**：A〜C を計算して目安に当たるかを判定する。目安の数値はスクリプトの定数で、引数では変えられない。
+  >   入力は PL01〜PL03 の ver3 の主解析の結果フォルダ（`--manifest` 付きで実行したもの。参加者 ID が PL で始まらないセッションは受け付けない）。qc.json の入力ファイルの sha256 が今のファイルと違えば止まる
+  >   ```powershell
+  >   python .\src\analysis\idt_threshold_check.py --results .\data\processed\aoi_result\<PL01の base> .\data\processed\aoi_result\<PL02の base> .\data\processed\aoi_result\<PL03の base>
+  >   ```
+  >   出力は `data\processed\idt_check\`（summary.json に判定、a_* / b_* / c_* の CSV）。B は台帳の `calibration_file` の較正 JSON（calibrate_validate 1.4.0 以降）が要る。無い参加者は「判定不能」になり、全体の判定も「該当なし」にはならない
+  >   - B の見積もりは「軸ごとに独立な正規ノイズ」を仮定した E[D] = d2(n)·RMS-S2S（n＝6 で d2＝2.534）。実際のノイズはサンプル間に相関があるので目安
+  > - [ ] 実行して、結果を `> YYYY-MM-DD の結果` としてここに書く（コンソールの表示と summary.json の判定）
 - [ ] 感度分析（距離 650 mm 固定）は出力先を分けて実行する（同じ出力先では条件の違う結果の上書きを拒否する）：
       `... --params .\src\aoi_detector\analysis_params_sensitivity_fixed650.json --output-dir .\data\processed\aoi_result_fixed650`。
       集計も `--results-dir .\data\processed\aoi_result_fixed650 --out-dir .\data\processed\aggregate_fixed650` で分ける
