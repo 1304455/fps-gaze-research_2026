@@ -428,6 +428,23 @@ python .\src\analysis\aggregate_sessions.py --manifest .\data\sessions_manifest.
 - 除外基準は 10/21 に合意した分だけ評価される（分析時間・coverage の下限は未決で null）。`qc_report` の `exclude_candidate` と `flag_*` 列、`n_criteria_evaluated`（6 になる）を見る
 - テンプレートの基準を変えたら（未決の値が決まったら）`data\qc_criteria.json` にもコピーし直す
 
+### 8a. 予備実験の図：Gaze % の内訳（aoi_fixation / aoi_nonfixation、2026-11-12 追加）
+
+週報・卒論用。AOI ごとの Gaze %（棒全体）を、AOI への注視（濃い色）と非注視の AOI 内サンプル（薄い色）に分けて描く。
+**予備実験（参加者 ID が PL〜）の主解析の結果だけ**を受け付ける（S01 以降を渡すと止まる）。初回だけ `pip install matplotlib`。
+```powershell
+$pl = Get-ChildItem .\data\processed\aoi_result -Directory | Where-Object { $_.Name -match '^gaze_PL' } | ForEach-Object { $_.FullName }
+$pl
+python .\src\analysis\gaze_pct_fixation_split.py --check-only --results $pl
+python .\src\analysis\gaze_pct_fixation_split.py --results $pl
+```
+- `$pl` の一覧に、使うセッションだけが入っているか先に見る（PL01 の 10/29 と 11/06 など。使わない試しの結果があれば外す）
+- `--check-only`：AOI 設定（content_sha256）・aoi_analysis の版・解析パラメータを、値ごとにセッション名を並べて出す。AOI のハッシュには、リポジトリの `valorant_hud_aoi_circular.json` のどの commit の版と同じかを添える（どれとも違えば手元で編集した JSON）。そろっていなければ ver3 を同じ AOI JSON で `--overwrite` を付けて解析し直す。`aggregate_sessions.py` が条件の違いで止まったときも、同じ一覧が出る
+- 出力：`data\processed\figures\gaze_pct_fixation_split.png` / `.csv` / `_provenance.json`。条件（セッション・AOI・パラメータ）の違う同名の出力があると止まる（`--out-dir` を分けるか `--overwrite`）
+- 積み上げの合計が ver3 の `aoi_metrics_session.csv` の `gaze_pct` と一致しないと止まる（一致を確かめた上で描いている）
+- AOI を変える：`--aois round_timer ally_team_status enemy_team_status`（既定は minimap crosshair lower_hud_combined。credits は描かない）。英語のラベルは `--lang en`
+- 濃い部分は「AOI への注視のサンプルの割合」で、「注視時間の割合」（注視の総時間 ÷ 有効時間、注視は重心の AOI で数える）とは定義が違う。後者は CSV の `fixation_duration_pct_of_valid_time` に参考として出す。図の説明文では混ぜない
+
 ---
 
 ## よくある失敗
