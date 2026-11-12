@@ -87,6 +87,7 @@
 [I-DT の確認] src/analysis/idt_threshold_check.py (1.0.0) 予備実験（PL〜）の ver3 の結果から閾値を振って解析し直し、LAB_CHECKLIST 4 の目安で判定 → data/processed/idt_check/
 [集計]   src/analysis/aggregate_sessions.py --manifest data/sessions_manifest.csv → data/processed/aggregate/
          （感度分析は --results-dir aoi_result_fixed650 --out-dir aggregate_fixed650。区間なしの結果は既定で合算しない）
+[図]     src/analysis/gaze_pct_fixation_split.py (1.0.0) 予備実験（PL〜のみ）の Gaze % を aoi_fixation / aoi_nonfixation に分けた積み上げ棒 → data/processed/figures/（合計が ver3 の gaze_pct と一致しないと止まる。--check-only で AOI ハッシュ・版・パラメータのセッション別一覧）
 [台帳]   data/sessions_manifest.csv（実験者が記入。テンプレートは docs/templates/）
 ```
 

@@ -16,6 +16,8 @@ pywin32; sys_platform == "win32"
 numpy
 pandas
 opencv-python
+# 予備実験の図（src/analysis/gaze_pct_fixation_split.py、2026-11-12 追加）
+matplotlib
 
 # AOI のライブオーバーレイ（aoi_overlay*.py。試合中には起動しない）
 PyQt5
