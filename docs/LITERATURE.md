@@ -1,6 +1,6 @@
 # 文献台帳（引用の段階）
 
-- 状態：確定版（2026-11-10）。2026-11-11 更新：PDF を入手した6本を段階1に上げ、本文で確かめた注意を §4 に足した
+- 状態：確定版（2026-11-10）。2026-11-11 更新：PDF を入手した6本を段階1に上げ、本文で確かめた注意を §4 に足した。2026-11-16 更新：Yoon et al. (2025) を出版版の PDF で段階1に上げ、欠測 75 ms の出典を Tobii の公式ページに差し替えた
 - 基準の commit：`82c6aae`（main に統合済み。`docs/GLOSSARY.md` と同じ）
 - 置き場所：`docs/LITERATURE.md`（公開リポジトリ）。**入れるのは書誌・ページ・段階・短い引用・注意だけ**。長い抜き書きと PDF は claude.ai の Project に置く
 - この台帳に無い文献は、卒論で引用しない。足すときは、書誌を確認してから、まずここに行を足す
@@ -14,6 +14,7 @@
 | 3 | 書誌だけ、または要約だけ | 本文中に【要出典・原典確認】を付ける。内容を根拠にした文は書かない |
 
 **柱になる主張**の文献は、提出前に段階1まで上げる。段階2・3のままでは提出しない。書籍は、該当するページの写しを Project に入れ、ページ番号を台帳に書いた時点で段階1とする。
+Web ページは、該当箇所の写し（URL・最終アクセス日・短い引用）を Project に入れた時点で段階1とする（2026-11-16 追加）。ページは後から書き換わることがあるので、本文の参考文献に最終アクセス日を書く。
 
 ---
 
@@ -30,7 +31,7 @@
 | 多重比較の補正 | Holm (1979) | — | 3 |
 | 注視の定義（I-DT の方法） | Salvucci & Goldberg (2000) | — | **1** |
 | I-DT の閾値（最短 100 ms、分散 1°） | 目安の範囲：Salvucci & Goldberg (2000)。閾値で注視の数・時間が変わること：Blignaut (2009)（**閾値の範囲の根拠には使えない**。§4） | 予備実験（PL01〜PL03）での妥当性の確認（`docs/LAB_CHECKLIST.md` 4。目安は結果を見る前に記録、2026-11-11 に実行・決定） | **1** |
-| 注視を分ける欠測 75 ms（主解析の `max_gap_ms`） | Olsen (2012)〔メーカー文書・非査読〕：Tobii I-VT の gap fill-in の既定値 | 参加者ごとの欠測の頻度（`missing_gaps`）と、200 ms の感度分析 | 3 |
+| 注視を分ける欠測 75 ms（主解析の `max_gap_ms`） | Tobii の公式ページ（Tobii Ocumen の I-VT フィルタの説明。メーカー文書・非査読）：I-VT の gap fill-in の推奨値（2026-11-16 に Olsen (2012) から差し替え） | 参加者ごとの欠測の頻度（`missing_gaps`）と、200 ms の感度分析 | **1** |
 | クロスヘアの半径 2.0° | 中心窩の大きさ（約 2°）：Holmqvist et al. (2011) | 正確度の余裕（0.4〜1°）：自分の較正の結果（`docs/LAB_CHECKLIST.md` 2c） | 3 |
 | accuracy と precision の定義 | Holmqvist et al. (2011) | — | 3 |
 
@@ -47,7 +48,8 @@
 | Holm, S. (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics, 6*(2), 65–70. https://www.jstor.org/stable/4615733 | PDF を Project に入れる |
 | Salvucci, D. D., & Goldberg, J. H. (2000). Identifying fixations and saccades in eye-tracking protocols. In *Proceedings of the 2000 Symposium on Eye Tracking Research & Applications (ETRA '00)* (pp. 71–78). ACM. https://doi.org/10.1145/355017.355028 | 済み（`Salvucci-ETRA00.pdf`）。引用時の注意は §4 |
 | Blignaut, P. (2009). Fixation identification: The optimum threshold for a dispersion algorithm. *Attention, Perception, & Psychophysics, 71*(4), 881–895. https://doi.org/10.3758/APP.71.4.881 | 済み（`APP.71.4.881.pdf`）。比べている分散の測り方は5通り。**この研究の測り方（x の範囲 ＋ y の範囲）に近いのは Slv だが、Slv は範囲の「平均」で、この研究の値の半分に当たる**。引用時の注意は §4 |
-| Olsen, A. (2012). *The Tobii I-VT fixation filter*. Tobii Technology.〔メーカー文書・非査読〕 | 文書を入手して Project に入れる。正式な題・版・ページ数と、gap fill-in の既定値 75 ms の記載箇所を確認する（題と値は、今回は二次的な記載でしか確認していない） |
+| Tobii. *Fixation Tobii IVT*（Tobii XR Devzone ＞ Tobii Ocumen ＞ Ocumen Filters）. https://developer.tobii.com/xr/ocumen/ocumen-filters/ocumen_filters/fixation_tobii_ivt/ （最終アクセス 2026-11-16）〔メーカー文書・非査読〕 | 済み（Project の `claude/2026-11-16_Web写し_Tobii_IVT推奨値.md`）。引用時の注意は §4 |
+| Olsen, A. (2012). *The Tobii I-VT fixation filter*. Tobii Technology.〔メーカー文書・非査読〕 | 柱の出典からは外した（2026-11-16）。公式の置き場所が見つからない。上の Tobii のページの参考文献欄に「Tobii Technology (2012): 1-21」とある。入手できたら Tobii のページと併記してよい |
 | Holmqvist, K., Nyström, M., Andersson, R., Dewhurst, R., Jarodzka, H., & van de Weijer, J. (2011). *Eye tracking: A comprehensive guide to methods and measures*. Oxford University Press. ISBN 978-0-19-969708-3 | 中心窩の大きさ、accuracy・precision の定義のページを確認し、写しを Project に入れる |
 
 ### 取り違えに注意する文献
@@ -59,7 +61,7 @@
 
 ---
 
-## 2. 段階1（PDF あり）：9本
+## 2. 段階1（PDF あり）：10本
 
 書誌は、PDF の表記と出版社・PubMed Central などのページで確認した（下の3本は 2026-11-11）。
 
@@ -73,15 +75,15 @@
 | Jeong, I., Nakagawa, K., Osu, R., & Kanosue, K. (2022). Difference in gaze control ability between low and high skill players of a real-time strategy game in esports. *PLOS ONE, 17*(3), e0265526. https://doi.org/10.1371/journal.pone.0265526 | `journal.pone.0265526.pdf` | RTS（StarCraft）で熟練者はミニマップの領域を多く見た。実プレイ中の熟練度の比較の例 | §4 |
 | Montolio-Vila, A., Argilés, M., Sunyer-Grau, B., Quevedo, L., & Erickson, G. (2024). Effect of action video games in eye movement behavior: A systematic review. *Journal of Eye Movement Research, 17*(3), 6. https://doi.org/10.16910/jemr.17.3.6 | `jemr-17-03-f.pdf` | 対象13研究のうちゲームプレイ中に熟練度で比べたのは2本（p.16）。眼球運動の指標は課題に依存する（p.17）。ランクで群分けした例と自己選択バイアス（p.15–16） | §4 |
 | Jeong, I., Nobuto, T., Kaneko, N., Kato, T., & Nakazawa, K. (2023). Investigating the gaze control ability of VALORANT players using a Python-based tool. arXiv:2310.15542 | `2310.15542v1.pdf` | VALORANT の実プレイでの ROI 別の割合。区分の対応（Information 1・2） | **査読前のプレプリント**。本文に [Preprint] と書く。§4 |
+| Yoon, J.-S., Moon, H.-S., Boudaoud, B., Spjut, J., Frosio, I., Lee, B., & Kim, J. (2025). Modeling visually-guided aim-and-shoot behavior in first-person shooters. *International Journal of Human-Computer Studies, 199*, 103503. https://doi.org/10.1016/j.ijhcs.2025.103503 | `1-s2.0-S1071581925000606-main.pdf`（出版版） | ランクで熟練度を定義した例、無効データの除外の例 | §4（2026-11-16 に段階2から移した） |
 | Luo, Y., Chen, Y., Cho, J., Yan, C., & Seo, J. (2025). Differences in eye movement characteristics between expert and non-expert eSports players: A systematic review and meta-analysis. *Scientific Reports, 15*, 30185. https://doi.org/10.1038/s41598-025-12101-8 | `Differences_in_eye_movement_characteristics_betwee.pdf` | eスポーツの視線研究の現状。含まれた7研究に FPS が無いこと | §4 |
 
-## 3. 段階2（メモに原文の引用とページ）：5本
+## 3. 段階2（メモに原文の引用とページ）：4本
 
 引用とページは Project の `claude/文献抽出_HUD注視研究_2026-10.md` にある。
 
 | 文献 | 使いどころ | 注意 |
 |---|---|---|
-| Yoon, J.-S., Moon, H.-S., Boudaoud, B., Spjut, J., Frosio, I., Lee, B., & Kim, J. (2025). Modeling visually-guided aim-and-shoot behavior in first-person shooters. | ランクで熟練度を定義した例、無効データの除外の例 | プレプリント。出版版の有無を確認する |
 | Holm, S. K. (2023). *Preferences, emotions, and visual attention in the first-person shooter game experience*. University of Turku（博士論文） | FPS の視線研究は各群4〜10名、AOI 解析は今後の課題 | 孫引き（Choi & Kim 2018 など）は原典を見るまで引かない |
 | Jin, P., Ge, Z., & Fan, T. (2023). Research on visual search behaviors of basketball players at different levels of sports expertise. *Scientific Reports, 13*, 1406 | 注視の多い・少ないは文献で割れる、AOI を分ける意義 | — |
 | Chia, J. S., Burns, S. F., Barrett, L. A., & Chow, J. Y. (2017). Increased complexities in visual search behavior in skilled players for a self-paced aiming task. *Frontiers in Psychology, 8*, 987 | 時間の制約で熟練者の注視が変わる | 補助的（バドミントン） |
@@ -132,6 +134,16 @@
 - 換算の係数は Tobii 1750（50 Hz）とチェス盤の静止画で出したもので、ほかの条件で使えるかは未確認、と本人が書いている（p.894）。目安としてだけ使う。
 - 閾値が小さすぎると、ふるえの大きい人の注視が検出から漏れる（p.884）。注視数は半径 0.7〜1° 付近で最大になり、それより小さいと減る（p.890、図9）。
 - **「閾値 1° は Blignaut に従った」とは書けない**。閾値で注視の数・時間が変わることの根拠（p.884、894）としては引ける。方法の章での位置づけは未決。
+
+**Yoon et al. (2025)**（ページは出版版。誌面のページと PDF のページは同じ）
+- Project のメモ（`文献抽出_HUD注視研究_2026-10.md`）のページはプレプリント版のもの。引くときは出版版のページにする：ランクで熟練度を定義（プロは上位 0.1% 未満など）p.10、高速度カメラで推定した遅れで同期 p.11、視線データの 60% 超が無効な試行を除外 p.12、照準行動の分析に視線の追跡が要る p.18、プロに高い謝礼を払った交絡 p.21、FPS の視線の手引きが少ない（脚注）p.24、視線から遠い標的ほど位置の推定が不正確 p.3
+- 視線反応時間（GRT）の数値（メモの (b)）は、出版版で同じ文字列を見つけられなかった。引くならページを目で確かめる
+- 参加者は VALORANT と PUBG のプロ10名とアマチュア10名（p.10）。課題は実験用の照準課題（1人 2,160 試行）で、試合のプレイ中の視線ではない（p.11）
+
+**Tobii の I-VT の説明ページ**（Project の写し、最終アクセス 2026-11-16）
+- 載っているのは **Tobii Ocumen**（XR 向けの SDK）の I-VT フィルタの推奨設定で、「gap fill in interpolation duration below - 75000 µs」とある。Tobii Pro Lab や Tobii Pro Spark の文書ではない
+- 卒論では「Tobii の I-VT フィルタで推奨される欠測の補間の上限（75 ms）と同じ値」と書く。「Tobii Pro Spark の既定値」とは書かない
+- Web ページは書き換わることがあるので、参考文献に最終アクセス日を書く
 
 **Joyce et al. (2024)**
 - 「熟練者ほど HUD に相対的に多く配分した」は、**予測（H3、p.2）と逆向きの結果**。著者自身が「仮説と逆向き」と書いている（p.9）。
