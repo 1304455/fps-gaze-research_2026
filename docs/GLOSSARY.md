@@ -1,7 +1,7 @@
 # 用語・定義集（卒論用）
 
 - 状態：確定版（2026-11-10。ユーザーの修正指示を反映）
-- 基準の commit：`cf248a0`（ブランチ `claude/analysis-plan-no-tests-1117`、2026-11-17。main の `ac3e144` に、ANALYSIS_PLAN の 11/15〜17 の決定〔検定・信頼区間・群の要約をやめた、区分の名前、本文で取り上げる比較、人数による出し分け、補助の値〕と CLAUDE.md §2「分析計画」の追記を足した版。PR #20）。旧：`82c6aae`（2026-11-11）
+- 基準の commit：`fc956f2`（ブランチ `claude/analysis-plan-no-tests-1117`、2026-11-17。main の `ac3e144` に、ANALYSIS_PLAN の 11/15〜17 の決定〔検定・信頼区間・群の要約をやめた、区分の名前、本文で取り上げる比較、人数による出し分け、補助の値、データ品質の示し方〕と CLAUDE.md §2 の追記を足した版。PR #20。データ品質の示し方〔`fc956f2`〕は定義集に足す用語が無い）。旧：`82c6aae`（2026-11-11）
 - 置き場所：`docs/GLOSSARY.md`
 
 ## このファイルの役割
@@ -12,10 +12,10 @@
 
   ```powershell
   # 何か出たら、定義集に未反映の正本の変更がある（今いるブランチの HEAD と比べる）
-  git log --oneline cf248a0..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
+  git log --oneline fc956f2..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
   ```
 
-  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`cf248a0` は main の履歴に残るので基準はそのままでよい（PR #20 を squash せずに取り込む場合）。
+  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`fc956f2` は main の履歴に残るので基準はそのままでよい（PR #20 を squash せずに取り込む場合）。
 
 ### 出典の略記
 
