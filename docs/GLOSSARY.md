@@ -1,7 +1,7 @@
 # 用語・定義集（卒論用）
 
 - 状態：確定版（2026-11-10。ユーザーの修正指示を反映）
-- 基準の commit：`9ccfe69`（ブランチ `claude/novelty-scope-1117`、2026-11-17。main の `7f3ae83` に、ANALYSIS_PLAN §3 の新規性の主張を VALORANT に限った変更を足した版）。旧：`5126405`（PR #23）
+- 基準の commit：`0163e2f`（ブランチ `claude/novelty-scope-1117`、2026-11-17。main の `7f3ae83` に、ANALYSIS_PLAN §3 の新規性の主張を VALORANT に限った変更と、CLAUDE.md §2「分析計画」の行への注記を足した版）。旧：`9ccfe69`、その前は `5126405`（PR #23）
 - 置き場所：`docs/GLOSSARY.md`
 
 ## このファイルの役割
@@ -12,10 +12,10 @@
 
   ```powershell
   # 何か出たら、定義集に未反映の正本の変更がある（今いるブランチの HEAD と比べる）
-  git log --oneline 9ccfe69..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
+  git log --oneline 0163e2f..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
   ```
 
-  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`9ccfe69` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
+  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`0163e2f` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
 
 ### 出典の略記
 
