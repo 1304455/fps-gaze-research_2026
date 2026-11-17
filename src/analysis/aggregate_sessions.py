@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -132,6 +133,95 @@ def check_params_consistent(qcs: list[dict]) -> list[str]:
     if len(aoi_hash) > 1:
         problems.append(f"AOI設定がセッション間で異なります（{key} {len(aoi_hash)}種類）")
     return problems
+
+
+AOI_CONFIG_REPO_PATH = "src/aoi_detector/valorant_hud_aoi_circular.json"
+
+
+def aoi_hash_history(repo_path: str = AOI_CONFIG_REPO_PATH) -> dict:
+    """
+    リポジトリの AOI JSON の各版の content_sha256 → (commit, 日付)。git が使えなければ空。
+    セッションの AOI 設定がどの版のものかを --check-only などで示すため（2026-11-12 追加）。
+    """
+    from aoi_geometry import aoi_config_content_sha256
+
+    def run(args):
+        try:
+            out = subprocess.run(["git", *args], cwd=_PROJECT_ROOT, capture_output=True, text=True,
+                                 encoding="utf-8", timeout=10)
+            return out.stdout if out.returncode == 0 else None
+        except Exception:
+            return None
+
+    log = run(["log", "--format=%h %ad", "--date=short", "--", repo_path])
+    history = {}
+    for line in (log or "").splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        text = run(["show", f"{parts[0]}:{repo_path}"])
+        if not text:
+            continue
+        try:
+            digest = aoi_config_content_sha256(json.loads(text))
+        except ValueError:
+            continue
+        history.setdefault(digest, (parts[0], parts[1]))  # log は新しい順なので、最初に見つかった＝最新の版
+    return history
+
+
+def condition_breakdown(qcs: list[dict]) -> list[dict]:
+    """
+    check_params_consistent で比べる項目ごとに、値 → その値のセッションの一覧。
+    どのセッションが違うのかを示すため（check_params_consistent は「違う」とだけ言う）。2026-11-12 追加。
+    戻り値：[{"item", "values": {値の表示: [session_base, ...]}, "differs"}]
+    """
+    def group(values):
+        out: dict[str, list[str]] = {}
+        for q, v in zip(qcs, values):
+            out.setdefault(v, []).append(str(q.get("session_base")))
+        return out
+
+    items = []
+    aoi_cfgs = [(q.get("inputs") or {}).get("aoi_config") or {} for q in qcs]
+    key = "content_sha256" if all(a.get("content_sha256") for a in aoi_cfgs) else "sha256"
+    items.append({"item": f"AOI設定（{key}）", "values": group([str(a.get(key)) for a in aoi_cfgs])})
+    items.append({"item": "aoi_analysis の版（script.version）",
+                  "values": group([json.dumps((q.get("script") or {}).get("version")) for q in qcs])})
+    for k in PARAMS_MUST_MATCH:
+        items.append({"item": f"params.{k}",
+                      "values": group([json.dumps((q.get("params") or {}).get(k), ensure_ascii=False) for q in qcs])})
+    fixed = [q for q in qcs if (q.get("params") or {}).get("eye_screen_distance_source") == "fixed"]
+    if fixed:
+        vals: dict[str, list[str]] = {}
+        for q in fixed:
+            vals.setdefault(json.dumps(q["params"].get("eye_screen_distance_mm")), []).append(str(q.get("session_base")))
+        items.append({"item": "params.eye_screen_distance_mm（source=fixed のセッションのみ）", "values": vals})
+    for it in items:
+        it["differs"] = len(it["values"]) > 1
+    return items
+
+
+def format_condition_breakdown(items: list[dict], only_differing: bool = False,
+                               hash_history: "dict | None" = None) -> str:
+    """condition_breakdown の表示。AOI のハッシュは先頭12文字と、リポジトリの AOI JSON のどの版と同じかを添える。"""
+    if hash_history is None and any(it["item"].startswith("AOI設定") for it in items):
+        hash_history = aoi_hash_history()
+    lines = []
+    for it in items:
+        if only_differing and not it["differs"]:
+            continue
+        mark = "⚠ " if it["differs"] else "  "
+        lines.append(f"{mark}{it['item']}：{len(it['values'])}種類")
+        for val, sessions in it["values"].items():
+            shown = val
+            if it["item"].startswith("AOI設定"):
+                shown = val[:12]
+                hit = (hash_history or {}).get(val)
+                shown += (f"〔リポジトリの {AOI_CONFIG_REPO_PATH} の {hit[0]}（{hit[1]}）と同じ〕" if hit
+                          else "〔リポジトリの AOI JSON の履歴のどの版とも違う：手元で編集した AOI JSON か、別のファイル〕")
+            lines.append(f"      {shown}（{len(sessions)} セッション）: {', '.join(sessions)}")
+    return "\n".join(lines) if lines else "（違いはありません）"
 
 
 def whole_session_sessions(qcs: list[dict]) -> list[str]:
@@ -521,6 +611,8 @@ def main(argv=None):
     if problems:
         for pr in problems:
             print(f"⚠ {pr}")
+        # どのセッションが違うのかの一覧（2026-11-12 追加。表示だけで、判定は変えない）
+        print(format_condition_breakdown(condition_breakdown(qcs), only_differing=True))
         if not args.allow_mixed_params:
             raise SystemExit("エラー: 定義の違う結果は合算できません。同じパラメータで解析し直してください。")
     whole = whole_session_sessions(qcs)

@@ -16,3 +16,11 @@ def test_requirements_are_utf8_with_coding_line(name):
     data = (ROOT / name).read_bytes()
     data.decode("utf-8")  # UTF-8 として読めること
     assert data.split(b"\n", 1)[0].strip() == b"# -*- coding: utf-8 -*-"
+
+
+@pytest.mark.parametrize("rel", ["src/analysis/gaze_pct_fixation_split.py"])
+def test_analysis_scripts_are_utf8_with_coding_line(rel):
+    """日本語のメッセージを含む解析スクリプトが UTF-8 で、先頭に coding 宣言がある（研究室PCの cp932 環境で読めるように）。"""
+    data = (ROOT / rel).read_bytes()
+    data.decode("utf-8")
+    assert data.split(b"\n", 1)[0].strip() == b"# -*- coding: utf-8 -*-"
