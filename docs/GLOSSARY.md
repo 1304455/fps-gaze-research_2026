@@ -1,7 +1,7 @@
 # 用語・定義集（卒論用）
 
 - 状態：確定版（2026-11-10。ユーザーの修正指示を反映）
-- 基準の commit：`3b05131`（ブランチ `claude/aux-literature-1117`、2026-11-17。PR #22。main の `9f85805` に、ANALYSIS_PLAN §7b-2〔補助の比較文献〕、§5 の名前の注記、CLAUDE.md §2 と RUN_PIPELINE のボイスチャットの条件、LITERATURE の4本を足した版。定義集に足す用語は無い）。旧：`fc956f2`（PR #20）
+- 基準の commit：`5126405`（ブランチ `claude/aux-scope-jeong2022-1117`、2026-11-17。main の `64a575f` に、ANALYSIS_PLAN §7b-2 の補助の比較文献を選ぶ基準と Furukado 2020 の違いの追記、LITERATURE の Jeong 2022・小澤・梶並・Furukado 2020 の更新を足した版。定義集に足す用語は無い）。旧：`3b05131`（PR #22）
 - 置き場所：`docs/GLOSSARY.md`
 
 ## このファイルの役割
@@ -12,10 +12,10 @@
 
   ```powershell
   # 何か出たら、定義集に未反映の正本の変更がある（今いるブランチの HEAD と比べる）
-  git log --oneline 3b05131..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
+  git log --oneline 5126405..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
   ```
 
-  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`3b05131` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
+  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`5126405` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
 
 ### 出典の略記
 

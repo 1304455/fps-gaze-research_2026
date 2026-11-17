@@ -75,7 +75,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | Salvucci & Goldberg (2000) | `Salvucci-ETRA00.pdf` | §1 | §4 |
 | Blignaut (2009) | `APP.71.4.881.pdf` | §1 | §4 |
 | Joyce, J. M., Campbell, M. J., Hojaji, F., & Toth, A. J. (2024). Less is more: Higher-skilled sim racers allocate significantly less attention to the track relative to the display features than lower-skilled sim racers. *Vision, 8*(2), 27. https://doi.org/10.3390/vision8020027 | `vision-08-00027-v3.pdf` | 熟練度で HUD とそれ以外への注視の配分を比べた例（シムレーシング）。周辺視・潜在的注意は測れないという限界 | §4 |
-| Jeong, I., Nakagawa, K., Osu, R., & Kanosue, K. (2022). Difference in gaze control ability between low and high skill players of a real-time strategy game in esports. *PLOS ONE, 17*(3), e0265526. https://doi.org/10.1371/journal.pone.0265526 | `journal.pone.0265526.pdf` | RTS（StarCraft）で熟練者はミニマップの領域を多く見た。実プレイ中の熟練度の比較の例 | §4 |
+| Jeong, I., Nakagawa, K., Osu, R., & Kanosue, K. (2022). Difference in gaze control ability between low and high skill players of a real-time strategy game in esports. *PLoS ONE, 17*(3), e0265526. https://doi.org/10.1371/journal.pone.0265526 | `journal.pone.0265526.pdf` | 背景と考察で使う。「FPS 以外のジャンル（RTS）でも、熟練者はミニマップに視線を多く向けていた」という傍証。**ANALYSIS_PLAN §7b-2 の補助の比較文献には入れない**（2026-11-17 更新。旧：「実プレイ中の熟練度の比較の例」。課題はエディタで作ったもので実際の試合ではないため書き換えた） | §4 |
 | Montolio-Vila, A., Argilés, M., Sunyer-Grau, B., Quevedo, L., & Erickson, G. (2024). Effect of action video games in eye movement behavior: A systematic review. *Journal of Eye Movement Research, 17*(3), 6. https://doi.org/10.16910/jemr.17.3.6 | `jemr-17-03-f.pdf` | 対象13研究のうちゲームプレイ中に熟練度で比べたのは2本（p.16）。眼球運動の指標は課題に依存する（p.17）。ランクで群分けした例と自己選択バイアス（p.15–16） | §4 |
 | Jeong, I., Nobuto, T., Kaneko, N., Kato, T., & Nakazawa, K. (2023). Investigating the gaze control ability of VALORANT players using a Python-based tool. arXiv:2310.15542 | `2310.15542v1.pdf` | VALORANT の実プレイでの ROI 別の割合。区分の対応（Information 1・2） | **査読前のプレプリント**。本文に [Preprint] と書く。§4 |
 | Yoon, J.-S., Moon, H.-S., Boudaoud, B., Spjut, J., Frosio, I., Lee, B., & Kim, J. (2025). Modeling visually-guided aim-and-shoot behavior in first-person shooters. *International Journal of Human-Computer Studies, 199*, 103503. https://doi.org/10.1016/j.ijhcs.2025.103503 | `1-s2.0-S1071581925000606-main.pdf`（出版版） | ランクで熟練度を定義した例、無効データの除外の例 | §4（2026-11-16 に段階2から移した） |
@@ -83,7 +83,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | Furukado, R., Hagiwara, G., Ito, T., & Isogai, H. (2020). Comparison of EEG biofeedback and visual search strategies during e-sports play according to skill level. *JHSE, 15*(Proc4), S1123–S1132（DOI は未確認） | `JHSE_2020_15_Proc4_13.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。対象のゲームは Rainbow Six Siege（S1125、S1126） | §4（2026-11-17 追加） |
 | Korotin, A., Khromov, N., Stepanov, A., Lange, A., Burnaev, E., & Somov, A. (2019). Towards understanding of eSports athletes' potentialities: The sensing system for data collection and analysis. arXiv:1908.06403v1 | `1908.06403v1.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の HUD 要素への視線の割合（記述のみ） | **IEEE の正式版がある（書誌は未確認）。正式版を確かめてから引用する**。§4（2026-11-17 追加） |
 | Velichkovsky, B. B., Khromov, N., Korotin, A., Burnaev, E., & Somov, A. (2019). Visual fixations duration as an indicator of skill level in eSports. arXiv:1906.01699v2 | `1906.01699v2.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の平均注視時間（画面全体） | §4（2026-11-17 追加） |
-| 小澤蓮・梶並知記 (2022（未確認）). FPS ゲームにおける非熟練者向けのミニマップ着目音声ガイドシステム. 日本デジタルゲーム学会 第12回年次大会 予稿集, pp.49–52.（年は予稿集で確かめていない） | `12_49.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。VALORANT でミニマップに視線を向けた回数と時間 | §4（2026-11-17 追加） |
+| 小澤蓮・梶並知記 (2022). FPS ゲームにおける非熟練者向けのミニマップ着目音声ガイドシステム. 日本デジタルゲーム学会 第12回年次大会 予稿集, pp.49–52.（DOI は未確認。年の根拠：J-Stage の日本デジタルゲーム学会 年次大会 予稿集、第12回大会、セッション 2-1、記事 12_49 https://www.jstage.jst.go.jp/article/digrajproc/12/0/12_49/_article/-char/ja 。第11回は2021年3月の開催、第13回の予稿集は2023年の発行。2026-11-17 に（未確認）を外した） | `12_49.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。VALORANT でミニマップに視線を向けた回数と時間 | §4（2026-11-17 追加） |
 
 ## 3. 段階2（メモに原文の引用とページ）：4本
 
@@ -130,6 +130,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 - 対象のゲームは **Rainbow Six Siege**（S1125、S1126）。VALORANT ではない
 - 考察で使う箇所：熟練群と準熟練群の結果 t(7) = 2.97, p < .05, d = 1.88（S1128）。Time left、Lower part、Our team の表（S1129）。Our team の領域の考察（S1130）
 - 方法で使う箇所：MMR による群分け、Gazepoint GP3 HD（150 Hz）（S1125）。ボイスチャットは聞くだけ、生存中だけを解析、AOI への注視の回数、1回あたりの注視時間（S1126）。AOI の設定（Fig. 2、S1127）
+- 方法で使う箇所（2026-11-17 追加）：参加者どうしの 5対5 カスタムマッチ。味方と敵の入れ替わりを防いで条件をそろえるため。1ラウンド約3分、ラウンド数は2（S1126）
 - **人数が食い違う**：アブストラクト（S1123）では熟練4名・準熟練5名、方法（S1125）では熟練5名・準熟練4名
 - 脳波の値が両群とも M = 3.75, SD = 2.87 で、写し間違いの可能性がある
 - 指標は注視の回数と1回あたりの時間で、Gaze %（サンプルの割合）ではない。比べるのは向きだけ（ANALYSIS_PLAN §7b-2）
@@ -194,9 +195,19 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 - Furukado & Hagiwara (2023) の引き方は誤り（上の Furukado & Hagiwara の項）。
 
 **Jeong et al. (2022)**
+- 2026-11-17 追加（PDF で確認）：
+  - 考察で使う箇所：Area i（ミニマップ）で熟練度の差がある。Wilcoxon の順位和検定で p < .001（p.9、図6 は p.12）。著者の解釈：ミニマップには課題全体の流れの情報がある（p.13）
+  - 方法で使う箇所：StarCraft、熟練者7名・低スキル9名。プレイの頻度と公式ランキングで群分けしている（pp.2–3）。エディタで作った難易度別の3つの課題。ミニマップはイベントが起きると点滅する（p.4）。AOI の指標は、そのエリアの注視時間を全エリアの注視時間の合計で割った値（p.8）
+  - **FPS ではなく RTS で、実際の試合でもない。FPS の根拠としては書かない**
+  - RTS のミニマップは、どこを操作するかを決める中心的な道具で、VALORANT のミニマップとは役割が違う
+  - 指標の分母が Gaze % と違う
+  - **「注視の割合」は §7c の補助値とは定義が違うので、§7c の裏付けには使わない**（2026-11-17 に、別々にあった p.13 の注意と「F = 4.70」の行を1つにまとめた）
+    - 定義（p.8）：Hidden Markov Model（I-HMM）で各動きをサッカードと注視に分け、**その回数**が全体に占める割合。**時間の比ではない**。AOI の割合でもない
+    - 結果（p.9）：熟練度の主効果は F = 4.70、p = .03、偏 η² = .08。低スキル群のほうが高い
+    - 図と考察（p.13）：図7、著者の解釈
+    - 訂正：11/17 に「注視とサッカードの時間の比」と書いたのは誤り（定義は p.8 のとおり回数の比）。旧の文：「p.13 の『低スキル群のほうが注視の割合が高い』は、注視とサッカードの時間の比である」。旧の別の行：「『注視の割合が低熟練者で高い（F = 4.70）』は、I-HMM で分類した眼球運動のうち注視が占める割合で、AOI の割合ではない（p.8–9）」
 - 熟練者が多く見たのは Area i（ミニマップ、p < .001）と Area iii（コマンド、p = .02）。ほかの UI（Area ii、iv、vi）とプレイ画面（Area v）には差が無い（p.9）。「HUD 全体を多く見た」とは言えない。
 - AOI の比率は「その領域の注視時間 ÷ 全領域の注視時間」（p.8）。**この研究の Gaze % とは定義が違う**（注視ベース、分母も違う）。
-- 「注視の割合が低熟練者で高い（F = 4.70）」は、I-HMM で分類した眼球運動のうち注視が占める割合で、AOI の割合ではない（p.8–9）。
 - 反復測定 ANOVA と書いてあるが、F と偏η² から逆算した誤差の自由度は約 43〜54 で、参加者 16 名より大きい（3課題を独立に扱った可能性）。p は控えめに扱う。
 - 装置は Pupil Core（頭部装着型）、画面は参加者が選んだ 24〜34 インチ、注視の分類は I-HMM（p.3、7–8）。
 
