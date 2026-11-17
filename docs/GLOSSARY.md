@@ -1,7 +1,7 @@
 # 用語・定義集（卒論用）
 
 - 状態：確定版（2026-11-10。ユーザーの修正指示を反映）
-- 基準の commit：`5126405`（ブランチ `claude/aux-scope-jeong2022-1117`、2026-11-17。main の `64a575f` に、ANALYSIS_PLAN §7b-2 の補助の比較文献を選ぶ基準と Furukado 2020 の違いの追記、LITERATURE の Jeong 2022・小澤・梶並・Furukado 2020 の更新を足した版。定義集に足す用語は無い）。旧：`3b05131`（PR #22）
+- 基準の commit：`0163e2f`（ブランチ `claude/novelty-scope-1117`、2026-11-17。main の `7f3ae83` に、ANALYSIS_PLAN §3 の新規性の主張を VALORANT に限った変更と、CLAUDE.md §2「分析計画」の行への注記を足した版）。旧：`9ccfe69`、その前は `5126405`（PR #23）
 - 置き場所：`docs/GLOSSARY.md`
 
 ## このファイルの役割
@@ -12,10 +12,10 @@
 
   ```powershell
   # 何か出たら、定義集に未反映の正本の変更がある（今いるブランチの HEAD と比べる）
-  git log --oneline 5126405..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
+  git log --oneline 0163e2f..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
   ```
 
-  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`5126405` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
+  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`0163e2f` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
 
 ### 出典の略記
 
@@ -212,7 +212,7 @@
 |---|---|---|
 | 「見ただけ」 | 「非注視の AOI 内サンプル」 | §2「サンプル分類」 |
 | 「注視しなかった＝その情報を使っていない」 | 「その AOI に視線位置（注視）が無かった」 | §2「サンプル分類」 |
-| 「HUD 全体を初めて分解した」 | 新規性は「下部HUDの分解」に絞る。調べた範囲は手元の文献のみ、と書く | AP §3 |
+| 「HUD 全体を初めて分解した」 | 新規性は「VALORANT での下部HUDの分解」に絞る（2026-11-17。他のゲームでは一部を分けた研究がある）。調べた範囲は手元の文献のみ、と書く | AP §3 |
 | 「熟練者群と非熟練者群の差を検定した」「ランクとの相関を検定した」 | 「ランクとの順位相関 ρ とその向きを調べた」（検定はしていない）【確定前】 | AP §0、§4b |
 | 「〜の傾向がみられた」 | 「ρ の向きは正（負）だった」 | AP §4f |
 | 「主要比較」「副次比較」 | 「先行研究に対応する比較」「下部HUDの内訳の比較」 | AP §3 |
