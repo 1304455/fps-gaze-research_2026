@@ -1,6 +1,6 @@
 # 文献台帳（引用の段階）
 
-- 状態：確定版（2026-11-10）。2026-11-11 更新：PDF を入手した6本を段階1に上げ、本文で確かめた注意を §4 に足した。2026-11-16 更新：Yoon et al. (2025) を出版版の PDF で段階1に上げ、欠測 75 ms の出典を Tobii の公式ページに差し替えた。2026-11-17 更新：補助の比較文献4本（Furukado et al. 2020、Korotin et al. 2019、Velichkovsky et al. 2019、小澤・梶並 2022）を段階1に足し、検定と信頼区間をやめたので4本を「不要」にした
+- 状態：確定版（2026-11-10）。2026-11-11 更新：PDF を入手した6本を段階1に上げ、本文で確かめた注意を §4 に足した。2026-11-16 更新：Yoon et al. (2025) を出版版の PDF で段階1に上げ、欠測 75 ms の出典を Tobii の公式ページに差し替えた。2026-11-17 更新：補助の比較文献4本（Furukado et al. 2020、Korotin et al. 2019、Velichkovsky et al. 2019、小澤・梶並 2022）を段階1に足し、検定と信頼区間をやめたので4本を「不要」にした。2026-11-17 更新（その2）：Hooge et al. (2026) を段階1に足し、クロスヘアの半径の柱を中心窩（Holmqvist 2011、段階3）から正確度の余白（Hooge 2026）に替えた
 - 基準の commit：`82c6aae`（main に統合済み。`docs/GLOSSARY.md` と同じ）
 - 置き場所：`docs/LITERATURE.md`（公開リポジトリ）。**入れるのは書誌・ページ・段階・短い引用・注意だけ**。長い抜き書きと PDF は claude.ai の Project に置く
 - この台帳に無い文献は、卒論で引用しない。足すときは、書誌を確認してから、まずここに行を足す
@@ -35,7 +35,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | 注視の定義（I-DT の方法） | Salvucci & Goldberg (2000) | — | **1** |
 | I-DT の閾値（最短 100 ms、分散 1°） | 目安の範囲：Salvucci & Goldberg (2000)。閾値で注視の数・時間が変わること：Blignaut (2009)（**閾値の範囲の根拠には使えない**。§4） | 予備実験（PL01〜PL03）での妥当性の確認（`docs/LAB_CHECKLIST.md` 4。目安は結果を見る前に記録、2026-11-11 に実行・決定） | **1** |
 | 注視を分ける欠測 75 ms（主解析の `max_gap_ms`） | Tobii の公式ページ（Tobii Ocumen の I-VT フィルタの説明。メーカー文書・非査読）：I-VT の gap fill-in の推奨値（2026-11-16 に Olsen (2012) から差し替え） | 参加者ごとの欠測の頻度（`missing_gaps`）と、200 ms の感度分析 | **1** |
-| クロスヘアの半径 2.0° | 中心窩の大きさ（約 2°）：Holmqvist et al. (2011) | 正確度の余裕（0.4〜1°）：自分の較正の結果（`docs/LAB_CHECKLIST.md` 2c） | 3 |
+| クロスヘアの半径 2.0° | AOI には正確度の誤差を少なくとも余白として含める：Hooge et al. (2026, p.10)（2026-11-17 に中心窩〔Holmqvist et al. 2011、段階3〕から替えた。CLAUDE.md §2「crosshair の半径」） | 正確度（0.4〜1°）：自分の較正の結果（`docs/LAB_CHECKLIST.md` 2c） | **1** |
 | accuracy と precision の定義 | Holmqvist et al. (2011) | — | 3 |
 
 ### 柱の文献の書誌
@@ -53,7 +53,8 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | Blignaut, P. (2009). Fixation identification: The optimum threshold for a dispersion algorithm. *Attention, Perception, & Psychophysics, 71*(4), 881–895. https://doi.org/10.3758/APP.71.4.881 | 済み（`APP.71.4.881.pdf`）。比べている分散の測り方は5通り。**この研究の測り方（x の範囲 ＋ y の範囲）に近いのは Slv だが、Slv は範囲の「平均」で、この研究の値の半分に当たる**。引用時の注意は §4 |
 | Tobii. *Fixation Tobii IVT*（Tobii XR Devzone ＞ Tobii Ocumen ＞ Ocumen Filters）. https://developer.tobii.com/xr/ocumen/ocumen-filters/ocumen_filters/fixation_tobii_ivt/ （最終アクセス 2026-11-16）〔メーカー文書・非査読〕 | 済み（Project の `claude/2026-11-16_Web写し_Tobii_IVT推奨値.md`）。引用時の注意は §4 |
 | Olsen, A. (2012). *The Tobii I-VT fixation filter*. Tobii Technology.〔メーカー文書・非査読〕 | 柱の出典からは外した（2026-11-16）。公式の置き場所が見つからない。上の Tobii のページの参考文献欄に「Tobii Technology (2012): 1-21」とある。入手できたら Tobii のページと併記してよい |
-| Holmqvist, K., Nyström, M., Andersson, R., Dewhurst, R., Jarodzka, H., & van de Weijer, J. (2011). *Eye tracking: A comprehensive guide to methods and measures*. Oxford University Press. ISBN 978-0-19-969708-3 | 中心窩の大きさ、accuracy・precision の定義のページを確認し、写しを Project に入れる |
+| Hooge, I. T. C., Nyström, M., Niehorster, D. C., Andersson, R., Foulsham, T., Nuthmann, A., & Hessels, R. S. (2026). The fundamentals of eye tracking part 6: Working with areas of interest. *Behavior Research Methods, 58*, 65. https://doi.org/10.3758/s13428-025-02937-3 | 済み（`s13428-025-02937-3.pdf`、2026-11-17 に全29ページを通読）。引用時の注意は §4 |
+| Holmqvist, K., Nyström, M., Andersson, R., Dewhurst, R., Jarodzka, H., & van de Weijer, J. (2011). *Eye tracking: A comprehensive guide to methods and measures*. Oxford University Press. ISBN 978-0-19-969708-3 | （中心窩の大きさは不要になった：2026-11-17、クロスヘアの根拠を Hooge et al. 2026 に替えたため）accuracy・precision の定義のページを確認し、写しを Project に入れる |
 
 ### 取り違えに注意する文献
 
@@ -64,7 +65,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 
 ---
 
-## 2. 段階1（PDF あり）：14本
+## 2. 段階1（PDF あり）：15本
 
 書誌は、PDF の表記と出版社・PubMed Central などのページで確認した（下の3本は 2026-11-11）。
 
@@ -84,6 +85,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | Korotin, A., Khromov, N., Stepanov, A., Lange, A., Burnaev, E., & Somov, A. (2019). Towards understanding of eSports athletes' potentialities: The sensing system for data collection and analysis. arXiv:1908.06403v1 | `1908.06403v1.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の HUD 要素への視線の割合（記述のみ） | **IEEE の正式版がある（書誌は未確認）。正式版を確かめてから引用する**。§4（2026-11-17 追加） |
 | Velichkovsky, B. B., Khromov, N., Korotin, A., Burnaev, E., & Somov, A. (2019). Visual fixations duration as an indicator of skill level in eSports. arXiv:1906.01699v2 | `1906.01699v2.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の平均注視時間（画面全体） | §4（2026-11-17 追加） |
 | 小澤蓮・梶並知記 (2022). FPS ゲームにおける非熟練者向けのミニマップ着目音声ガイドシステム. 日本デジタルゲーム学会 第12回年次大会 予稿集, pp.49–52.（DOI は未確認。年の根拠：J-Stage の日本デジタルゲーム学会 年次大会 予稿集、第12回大会、セッション 2-1、記事 12_49 https://www.jstage.jst.go.jp/article/digrajproc/12/0/12_49/_article/-char/ja 。第11回は2021年3月の開催、第13回の予稿集は2023年の発行。2026-11-17 に（未確認）を外した） | `12_49.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。VALORANT でミニマップに視線を向けた回数と時間 | §4（2026-11-17 追加） |
+| Hooge, I. T. C., Nyström, M., Niehorster, D. C., Andersson, R., Foulsham, T., Nuthmann, A., & Hessels, R. S. (2026). The fundamentals of eye tracking part 6: Working with areas of interest. *Behavior Research Methods, 58*, 65. https://doi.org/10.3758/s13428-025-02937-3 | `s13428-025-02937-3.pdf` | クロスヘアの半径の根拠（§1）。HUD の AOI に余白を足さない理由。周辺視の限界の候補 | §4（2026-11-17 追加） |
 
 ## 3. 段階2（メモに原文の引用とページ）：4本
 
@@ -220,6 +222,16 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 - Jeong et al. (2022) の要約（p.13）は、Jeong et al. (2022) から直接引く。
 - まとめの表（p.14）の "Peters et al. (2019)" は、本文と対象研究の表では Peters et al. (2021)。
 - 検索は PubMed と Scopus、2010〜2022 年（p.1）。
+**Hooge et al. (2026)**（*Behavior Research Methods, 58*, 65。ページは記事内の「Page X of 29」。2026-11-17 に全29ページを通読）
+- **手引き（指導書）で、規則ではない**。著者自身が「ガイドラインではない」と書いている（p.2）。「勧めている」と書き、「決められている」とは書かない
+- 柱の箇所（p.10）：正確度の誤差が AOI に比べて大きいと注視が誤って割り当てられる。**著者自身の推奨は「正確度を AOI の余白の絶対的な最低限として使う」**。「最小 1〜1.5°」は Holmqvist et al. (2011, p.223) の推奨の紹介、「直径 3.2° で 80%」は Orquin & Holmqvist (2018) の紹介で、著者は後者を「悲観的すぎる」としている。誰の推奨かを分けて書く
+- 補強に使える箇所：画面中央の近くは正確度が高い傾向（p.13）。小さい AOI には誤差の分の余白を足す（p.6、脚注3）。余白の幅は実際の研究を代表するデータの質を見て決める（p.23）
+- HUD の AOI に余白を足さない理由に使える箇所：隣り合う AOI（文章の単語の例）では横の余白を足せない（p.13）
+- 周辺視の限界に使える箇所：AOI の外を見ていても処理していないとは限らない（p.5、Foulsham & Kingstone 2025 を引いて）
+- サンプル単位と注視単位の AOI 解析には、どちらにも大きな欠点は無い（p.22）
+- AOI を少し変えて解析し直す感度分析を勧めている（pp.8–9）。本研究では保留（ANALYSIS_PLAN §9）
+- **FPS・ゲーム・クロスヘアの記述は無い**（ゲームは p.17 のカードゲームの例だけ）。「FPS のクロスヘアは直径 2° の円が出発点」という内容はこの論文に無い。中心窩の大きさの数字も無い
+- 共著者の1人（Andersson）は Tobii の社員（p.24、利益相反の欄）。AOI の一般論なので結論には影響しない
 
 ## 5. 段階3（書誌・要約だけ）
 
