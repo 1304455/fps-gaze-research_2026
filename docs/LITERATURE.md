@@ -27,7 +27,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 
 | 柱 | 文献が担う部分 | 自分のデータが担う部分 | 段階 |
 |---|---|---|---|
-| 主要比較の区分（AOI1〜6）、新規性の比較対象 | Furukado & Hagiwara (2023) | — | **1** |
+| 主要比較の区分（AOI1〜6）（現在の名前：先行研究に対応する比較）、新規性の比較対象 | Furukado & Hagiwara (2023) | — | **1** |
 | ~~並べ替え検定の方法~~ **不要（11/17）**：検定をやめた（ANALYSIS_PLAN §4b） | Edgington & Onghena (2007) | — | 3 |
 | ~~並べ替え検定の p 値の式 p =（k + 1）/（N + 1）~~ **不要（11/17）**：検定をやめた（ANALYSIS_PLAN §4b） | Phipson & Smyth (2010) | — | **1** |
 | ~~ρ の信頼区間の標準誤差~~ **不要（11/17）**：信頼区間をやめた（ANALYSIS_PLAN §4c） | Bonett & Wright (2000) | — | 3 |
@@ -80,10 +80,10 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | Jeong, I., Nobuto, T., Kaneko, N., Kato, T., & Nakazawa, K. (2023). Investigating the gaze control ability of VALORANT players using a Python-based tool. arXiv:2310.15542 | `2310.15542v1.pdf` | VALORANT の実プレイでの ROI 別の割合。区分の対応（Information 1・2） | **査読前のプレプリント**。本文に [Preprint] と書く。§4 |
 | Yoon, J.-S., Moon, H.-S., Boudaoud, B., Spjut, J., Frosio, I., Lee, B., & Kim, J. (2025). Modeling visually-guided aim-and-shoot behavior in first-person shooters. *International Journal of Human-Computer Studies, 199*, 103503. https://doi.org/10.1016/j.ijhcs.2025.103503 | `1-s2.0-S1071581925000606-main.pdf`（出版版） | ランクで熟練度を定義した例、無効データの除外の例 | §4（2026-11-16 に段階2から移した） |
 | Luo, Y., Chen, Y., Cho, J., Yan, C., & Seo, J. (2025). Differences in eye movement characteristics between expert and non-expert eSports players: A systematic review and meta-analysis. *Scientific Reports, 15*, 30185. https://doi.org/10.1038/s41598-025-12101-8 | `Differences_in_eye_movement_characteristics_betwee.pdf` | eスポーツの視線研究の現状。含まれた7研究に FPS が無いこと。FPS 以外のジャンルで熟練者がミニマップなどの重要な要素に視線を向けるという記述（p.6、Table 3）。ANALYSIS_PLAN §4f で minimap を本文で取り上げる理由の1つ | §4 |
-| Furukado et al. (2020). *JHSE, 15*(Proc4), S1123–S1132（著者の全員・題名・DOI は未確認） | 未確認（Project にある） | 補助の比較文献（ANALYSIS_PLAN §7b-2）。対象のゲームはこの台帳では未確認 | §4（2026-11-17 追加） |
-| Korotin et al. (2019). arXiv:1908.06403v1（著者の全員・題名は未確認） | 未確認（Project にある） | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の HUD 要素への視線の割合（記述のみ） | **IEEE の正式版がある（書誌は未確認）。正式版を確かめてから引用する**。§4（2026-11-17 追加） |
-| Velichkovsky et al. (2019). arXiv:1906.01699v2（著者の全員・題名は未確認） | 未確認（Project にある） | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の平均注視時間（画面全体） | §4（2026-11-17 追加） |
-| 小澤・梶並 (2022). pp.49–52（著者の全員・題名・掲載誌は未確認） | `12_49.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。VALORANT でミニマップに視線を向けた回数と時間 | §4（2026-11-17 追加） |
+| Furukado, R., Hagiwara, G., Ito, T., & Isogai, H. (2020). Comparison of EEG biofeedback and visual search strategies during e-sports play according to skill level. *JHSE, 15*(Proc4), S1123–S1132（DOI は未確認） | `JHSE_2020_15_Proc4_13.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。対象のゲームは Rainbow Six Siege（S1125、S1126） | §4（2026-11-17 追加） |
+| Korotin, A., Khromov, N., Stepanov, A., Lange, A., Burnaev, E., & Somov, A. (2019). Towards understanding of eSports athletes' potentialities: The sensing system for data collection and analysis. arXiv:1908.06403v1 | `1908.06403v1.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の HUD 要素への視線の割合（記述のみ） | **IEEE の正式版がある（書誌は未確認）。正式版を確かめてから引用する**。§4（2026-11-17 追加） |
+| Velichkovsky, B. B., Khromov, N., Korotin, A., Burnaev, E., & Somov, A. (2019). Visual fixations duration as an indicator of skill level in eSports. arXiv:1906.01699v2 | `1906.01699v2.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の平均注視時間（画面全体） | §4（2026-11-17 追加） |
+| 小澤蓮・梶並知記 (2022（未確認）). FPS ゲームにおける非熟練者向けのミニマップ着目音声ガイドシステム. 日本デジタルゲーム学会 第12回年次大会 予稿集, pp.49–52.（年は予稿集で確かめていない） | `12_49.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。VALORANT でミニマップに視線を向けた回数と時間 | §4（2026-11-17 追加） |
 
 ## 3. 段階2（メモに原文の引用とページ）：4本
 
@@ -127,6 +127,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 - FIFA や StarCraft で、熟練者がミニマップなどの重要な要素に視線を向けるという記述が p.6、各研究のまとめが Table 3（p.7）。**FPS の研究は含まれていないので、「FPS 以外のジャンルで」と書く**（2026-11-17 追加）
 
 **Furukado et al. (2020)**（JHSE, 15(Proc4), S1123–S1132。ページは掲載誌のもの。2026-11-17 追加）
+- 対象のゲームは **Rainbow Six Siege**（S1125、S1126）。VALORANT ではない
 - 考察で使う箇所：熟練群と準熟練群の結果 t(7) = 2.97, p < .05, d = 1.88（S1128）。Time left、Lower part、Our team の表（S1129）。Our team の領域の考察（S1130）
 - 方法で使う箇所：MMR による群分け、Gazepoint GP3 HD（150 Hz）（S1125）。ボイスチャットは聞くだけ、生存中だけを解析、AOI への注視の回数、1回あたりの注視時間（S1126）。AOI の設定（Fig. 2、S1127）
 - **人数が食い違う**：アブストラクト（S1123）では熟練4名・準熟練5名、方法（S1125）では熟練5名・準熟練4名
@@ -135,14 +136,17 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 
 **Korotin et al. (2019)**（arXiv:1908.06403v1。ページは PDF のもの。2026-11-17 追加）
 - 考察で使う箇所：アマチュアのほうが UI の要素を長く見ていた（p.5）。Fig. 7 はプロの平均とアマチュアの平均のヒートマップで、値は画像の中にしかない
-- 方法で使う箇所：EyeLink、30 Hz（p.2）。15名（プロ5名、アマチュア10名）、Retake のモード（p.3）。UI の要素、60 Hz、生存中だけを解析、k-center によるクラスタリング、ゾーン（p.4）。p.2 の 30 Hz と p.4 の 60 Hz の関係は未確認
+- 方法で使う箇所：EyeLink、30 Hz（p.2）。15名（プロ5名、アマチュア10名）、Retake のモード（p.3）。UI の要素、60 Hz、生存中だけを解析、k-center によるクラスタリング、ゾーン（p.4）
+- **論文内で食い違いがある**。p.2 は EyeLink で毎秒30回測ると書き、p.4 はデータを 60 Hz で記録したと書いている。本文では、どちらとも決めずに書く
 - **検定はなく、記述だけ**。「差が無い」とは書けない
 - **IEEE の正式版がある（書誌は未確認）**。正式版を確かめてから引用する
+- **同じ研究グループ（Skoltech）による CS:GO の Retake の研究で、参加者が重なっている可能性がある。向きが同じでも、独立した2本の裏付けとして数えない**（2026-11-17 追加）
 
 **Velichkovsky et al. (2019)**（arXiv:1906.01699v2。ページは PDF のもの。2026-11-17 追加）
 - 考察で使う箇所：Table 1（p.4）。平均の注視時間は Low 250 ms、High 278 ms、Pro 282 ms で、F(2,18) = 0.53、有意でない。SD は有意に違う（F = 9.72, p < .001）
 - 方法で使う箇所：群分けは 700 時間未満 N = 10、700 時間以上 N = 7、プロ N = 4（1万時間以上）（p.2）。Tobii EyeX、30 Hz、CS:GO の Retake のモード（p.3）。Mould 法で注視を取り出している（被験者ごとに閾値が変わる）（p.4）
 - **AOI を分けておらず、画面全体の値**。本研究の副指標（平均注視時間）と向きを比べるだけ。検出の方法も違う（Mould 法と I-DT）
+- **同じ研究グループ（Skoltech）による CS:GO の Retake の研究で、参加者が重なっている可能性がある。向きが同じでも、独立した2本の裏付けとして数えない**（2026-11-17 追加）
 
 **小澤・梶並 (2022)**（`12_49.pdf`、pp.49–52。ページは掲載誌のもの。2026-11-17 追加）
 - 考察で使う箇所：表2（p.51）のうち**「未使用」の列だけ**を使う。敵が出たとき、ミニマップに視線を向けた回数／状況の回数は熟練者 11.8/14.7、非熟練者 5.2/15.7。向けるまでの時間は熟練者 1.45 秒、非熟練者 1.99 秒
