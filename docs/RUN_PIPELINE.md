@@ -212,18 +212,21 @@ $peak  = "Silver3"              # 最高ランク（参考。分からなけれ�
 $group = "low"                  # アイアン1〜シルバー3 = low ／ アセンダント1以上 = high ／ ゴールド〜ダイヤモンド = mid
 $side  = "attack"               # 最初のラウンドの攻守（attack / defense）。手順6の注釈でも同じ値を使う
 $notes = "ETM相対角度12°;post=" + (Split-Path $post -Leaf)   # 試合後の検証のファイル名（手順2b）
+$scoreAlly  = "13"             # 試合の最後の自チームのスコア（降参で終わったら降参した時点。分からなければ ""）
+$scoreEnemy = "9"              # 同じく相手チームのスコア
 $m = ".\data\sessions_manifest.csv"
 if (-not (Test-Path $m)) { Set-Content $m -Value (Get-Content .\docs\templates\sessions_manifest_template.csv -TotalCount 1 -Encoding UTF8) -Encoding UTF8 }
 $lines = @(Get-Content $m -Encoding UTF8)
 if ($lines -match "^$base,") { Write-Warning "台帳に $base の行がもうあります。追記しません。" } else {
-    $row = "$base,$participant,$group,$rank,$peak,,,,$side,3840x2160,16:9,,,$calib,$mp4,$notes"
+    $row = "$base,$participant,$group,$rank,$peak,,,,$side,3840x2160,16:9,,,$calib,$mp4,$notes,$scoreAlly,$scoreEnemy"
     Set-Content $m -Value ($lines + $row) -Encoding UTF8
 }
 Import-Csv $m -Encoding UTF8 | Select-Object -Last 1 | Format-List
 ```
 - 初回は、テンプレートの**見出し行だけ**で台帳を作る（記入例の行は入らない）
 - 列の順：`session_base, participant_id, group, rank_current, rank_peak, map, agent, role, start_side, game_resolution, aspect,
-  minimap_settings, eye_screen_distance_cm, calibration_file, video_path, notes`（16列。空欄はカンマだけ）
+  minimap_settings, eye_screen_distance_cm, calibration_file, video_path, notes, score_ally, score_enemy`（18列。空欄はカンマだけ）
+- `score_ally` / `score_enemy`（2026-11-16 追加）：試合の最後の自チーム／相手チームのスコア。降参で終わった試合は降参した時点のスコア。2試合した人はセッションごとの行にそれぞれの試合のスコアを書く。分からないときは空欄（手順6の `--expected-rounds` を省いて確認する）。集計・ver3 は読まない（区間の確認の手順6でだけ使う）。11/16 より前の台帳は見出しの末尾に `,score_ally,score_enemy` を足す（既存の行はそのままでも空欄として読まれる）
 - **`rank_current` は必ず書く**（2026-11-06）。集計（手順8）が `rank_current` から期待される group と台帳の `group` を照合し、合わなければエラーで止まる（PL03 で low→high、PL01 で low→mid の書き間違いがあったため）。空欄だと照合できず警告だけになる
 - `eye_screen_distance_cm` は巻尺で実際に測ったときだけ書く（解析の距離は眼位置の実測値を使うので、空欄でよい）
 - 値にカンマを入れない（`notes` は `;` で区切る）
@@ -299,7 +302,9 @@ python .\src\visualizer\segment_annotator.py $mp4 --session-base $base --start-s
 ```powershell
 python .\src\visualizer\segment_events_report.py --session-base $base --expected-rounds 22
 ```
-- `--expected-rounds` は試合のスコアの合計（例：13-9 なら 22）。省略してもよい
+- `--expected-rounds` は台帳の `score_ally` + `score_enemy`（例：13-9 なら 22。2026-11-16）。スコアは試合の最後の画面か試合履歴で見て、録画の最後のフレームで確かめる。降参の試合は降参した時点のスコアの合計。2試合した人はセッション（`$base`）ごとに、その試合のスコアで回す。スコアが空欄なら省く
+- 読み方：録画が乱れたラウンドは `b` を押さずに飛ばすので、そのぶん「`b` の数がラウンド数と合わない」が出る。**（期待するラウンド数 − `b` の数）が、台帳の notes に書いた録画が乱れたラウンドの数と同じなら正常**。違えば付け忘れ（差が大きい）か二重押し（差が小さい）を疑い、表で確かめる
+- 前半（12ラウンド目まで）に飛ばしたラウンドがあると、ラウンド番号がそのぶん前にずれるので、攻守の切り替え（13ラウンド目）の警告も同じ理由で出る。切り替わった番号が「13 − 前半に飛ばした数」なら正常
 - 表示：ラウンドごとの開始・終了の時刻（秒と分:秒）、攻守、生存時間、前の `b` からの間隔、注釈ツールを起動し直したときの攻守、区間 CSV がイベントと一致しているか
 - 疑いとして出すもの：終了が無い区間、開始が無い終了、`b` の間隔が中央値の 1.8 倍を超える（ラウンドが丸ごと抜けている可能性。目安）、二重押し、攻守が 13 ラウンド目で切り替わっていない、`b` の数がラウンド数と合わない
 
