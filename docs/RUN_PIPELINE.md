@@ -67,6 +67,8 @@ $calib = (Join-Path (Resolve-Path .\data\raw) $sel)
 python .\src\gaze_estimation\tobii_capture_with_sync_flash_v5.py --subject $subj --trial 1 --obs-config .\obs_config.json --max-duration 3600
 ```
 - **`--calibrate` は付けない**（手順1の較正が上書きされる）
+- [ ] **試合の前に**、ボイスチャットを使わない（話さない・聞かない）ことを参加者に説明したか（2026-11-17 追加。CLAUDE.md §2「ボイスチャット」）
+- [ ] **試合の前に**、ゲーム側の VC 設定（パーティーの VC とチームの VC のオンオフ、音量）を見て記録する。設定は変えない。手順5で台帳の notes に書く
 - 起動すると実験条件（マップ・エージェントなど）を聞かれるので、そのまま答える
 - 開始・停止は、別端末のブラウザから、コンソールに出る制御 URL で行う
 - **v5 を起動するたびに、コンソールに出た新しい URL を開き直す**（token は起動ごとに変わる。前の回のページのボタンは `invalid token` になり、開始も停止も効かない。2026-11-06 の試験で発生）
@@ -230,6 +232,7 @@ Import-Csv $m -Encoding UTF8 | Select-Object -Last 1 | Format-List
 - **`rank_current` は必ず書く**（2026-11-06）。集計（手順8）が `rank_current` から期待される group と台帳の `group` を照合し、合わなければエラーで止まる（PL03 で low→high、PL01 で low→mid の書き間違いがあったため）。空欄だと照合できず警告だけになる
 - `eye_screen_distance_cm` は巻尺で実際に測ったときだけ書く（解析の距離は眼位置の実測値を使うので、空欄でよい）
 - 値にカンマを入れない（`notes` は `;` で区切る）
+- ボイスチャット（2026-11-17 追加）：notes に `vc_explained=1;vc_party=on|off;vc_team=on|off;vc_vol=<設定画面の値>` の形で書く（音量の項目が複数あれば `vc_vol_party=…;vc_vol_team=…` のように分ける）。S01〜S03 は設定の記録が無いので `vc=未記録（参加者はVCを使用せず）` と書く
 - 後から列を足すときは `notepad $m` で編集する。**Excel で開いて保存しない**（`16:9` が `16:09` に変わる。ver3 の解像度チェックで止まる。
   止まったら `--allow-resolution-mismatch` で通さず台帳を直す）
 - **集計の前に、台帳・qc_report を Excel で開いていたら閉じる**（開いたままだと集計の書き出しが `PermissionError` で止まる。10/21 に発生）
