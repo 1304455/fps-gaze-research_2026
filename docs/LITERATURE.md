@@ -78,11 +78,11 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | Joyce, J. M., Campbell, M. J., Hojaji, F., & Toth, A. J. (2024). Less is more: Higher-skilled sim racers allocate significantly less attention to the track relative to the display features than lower-skilled sim racers. *Vision, 8*(2), 27. https://doi.org/10.3390/vision8020027 | `vision-08-00027-v3.pdf` | 熟練度で HUD とそれ以外への注視の配分を比べた例（シムレーシング）。周辺視・潜在的注意は測れないという限界 | §4 |
 | Jeong, I., Nakagawa, K., Osu, R., & Kanosue, K. (2022). Difference in gaze control ability between low and high skill players of a real-time strategy game in esports. *PLoS ONE, 17*(3), e0265526. https://doi.org/10.1371/journal.pone.0265526 | `journal.pone.0265526.pdf` | 背景と考察で使う。「FPS 以外のジャンル（RTS）でも、熟練者はミニマップに視線を多く向けていた」という傍証。**ANALYSIS_PLAN §7b-2 の補助の比較文献には入れない**（2026-11-17 更新。旧：「実プレイ中の熟練度の比較の例」。課題はエディタで作ったもので実際の試合ではないため書き換えた） | §4 |
 | Montolio-Vila, A., Argilés, M., Sunyer-Grau, B., Quevedo, L., & Erickson, G. (2024). Effect of action video games in eye movement behavior: A systematic review. *Journal of Eye Movement Research, 17*(3), 6. https://doi.org/10.16910/jemr.17.3.6 | `jemr-17-03-f.pdf` | 対象13研究のうちゲームプレイ中に熟練度で比べたのは2本（p.16）。眼球運動の指標は課題に依存する（p.17）。ランクで群分けした例と自己選択バイアス（p.15–16） | §4 |
-| Jeong, I., Nobuto, T., Kaneko, N., Kato, T., & Nakazawa, K. (2023). Investigating the gaze control ability of VALORANT players using a Python-based tool. arXiv:2310.15542 | `2310.15542v1.pdf` | VALORANT の実プレイでの ROI 別の割合。区分の対応（Information 1・2） | **査読前のプレプリント**。本文に [Preprint] と書く。§4 |
+| Jeong, I., Nobuto, T., Kaneko, N., Kato, T., & Nakazawa, K. (2023). Investigating the gaze control ability of VALORANT players using a Python-based tool. arXiv:2310.15542 | `2310.15542v1.pdf` | VALORANT の実プレイでの ROI 別の割合。区分の対応（Information 1・2） | **査読前のプレプリント**。本文に [Preprint] と書く。正式版（題名を変えて JEGE 2025）は入手できなかったので、プレプリントを引く（2026-11-17 ユーザー決定）。§4 |
 | Yoon, J.-S., Moon, H.-S., Boudaoud, B., Spjut, J., Frosio, I., Lee, B., & Kim, J. (2025). Modeling visually-guided aim-and-shoot behavior in first-person shooters. *International Journal of Human-Computer Studies, 199*, 103503. https://doi.org/10.1016/j.ijhcs.2025.103503 | `1-s2.0-S1071581925000606-main.pdf`（出版版） | ランクで熟練度を定義した例、無効データの除外の例 | §4（2026-11-16 に段階2から移した） |
 | Luo, Y., Chen, Y., Cho, J., Yan, C., & Seo, J. (2025). Differences in eye movement characteristics between expert and non-expert eSports players: A systematic review and meta-analysis. *Scientific Reports, 15*, 30185. https://doi.org/10.1038/s41598-025-12101-8 | `Differences_in_eye_movement_characteristics_betwee.pdf` | eスポーツの視線研究の現状。含まれた7研究に FPS が無いこと。FPS 以外のジャンルで熟練者がミニマップなどの重要な要素に視線を向けるという記述（p.6、Table 3）。ANALYSIS_PLAN §4f で minimap を本文で取り上げる理由の1つ | §4 |
 | Furukado, R., Hagiwara, G., Ito, T., & Isogai, H. (2020). Comparison of EEG biofeedback and visual search strategies during e-sports play according to skill level. *JHSE, 15*(Proc4), S1123–S1132（DOI は未確認） | `JHSE_2020_15_Proc4_13.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。対象のゲームは Rainbow Six Siege（S1125、S1126） | §4（2026-11-17 追加） |
-| Korotin, A., Khromov, N., Stepanov, A., Lange, A., Burnaev, E., & Somov, A. (2019). Towards understanding of eSports athletes' potentialities: The sensing system for data collection and analysis. arXiv:1908.06403v1 | `1908.06403v1.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の HUD 要素への視線の割合（記述のみ） | **IEEE の正式版がある（書誌は未確認）。正式版を確かめてから引用する**。§4（2026-11-17 追加） |
+| Korotin, A., Khromov, N., Stepanov, A., Lange, A., Burnaev, E., & Somov, A. (2019). Towards understanding of eSports athletes' potentialities: The sensing system for data collection and analysis. arXiv:1908.06403v1 | `1908.06403v1.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の HUD 要素への視線の割合（記述のみ） | IEEE の正式版がある（書誌は未確認）。**正式版は入手できなかったので、arXiv の版を引く**（2026-11-17 ユーザー決定）。§4（2026-11-17 追加） |
 | Velichkovsky, B. B., Khromov, N., Korotin, A., Burnaev, E., & Somov, A. (2019). Visual fixations duration as an indicator of skill level in eSports. arXiv:1906.01699v2 | `1906.01699v2.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の平均注視時間（画面全体） | §4（2026-11-17 追加） |
 | 小澤蓮・梶並知記 (2022). FPS ゲームにおける非熟練者向けのミニマップ着目音声ガイドシステム. 日本デジタルゲーム学会 第12回年次大会 予稿集, pp.49–52.（DOI は未確認。年の根拠：J-Stage の日本デジタルゲーム学会 年次大会 予稿集、第12回大会、セッション 2-1、記事 12_49 https://www.jstage.jst.go.jp/article/digrajproc/12/0/12_49/_article/-char/ja 。第11回は2021年3月の開催、第13回の予稿集は2023年の発行。2026-11-17 に（未確認）を外した） | `12_49.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。VALORANT でミニマップに視線を向けた回数と時間 | §4（2026-11-17 追加） |
 | Hooge, I. T. C., Nyström, M., Niehorster, D. C., Andersson, R., Foulsham, T., Nuthmann, A., & Hessels, R. S. (2026). The fundamentals of eye tracking part 6: Working with areas of interest. *Behavior Research Methods, 58*, 65. https://doi.org/10.3758/s13428-025-02937-3 | `s13428-025-02937-3.pdf` | クロスヘアの半径の根拠（§1）。HUD の AOI に余白を足さない理由。周辺視の限界の候補 | §4（2026-11-17 追加） |
@@ -119,7 +119,8 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 - **要旨と本文で相関の向きが食い違う**。要旨は正の相関、結果は Information 1 と KDA に負の相関（ρ = −0.608、p = .002、p.5、Fig. 7E）。引くのは結果の節。
 - ROI の割合と視線分布に、中位群と上位群の有意差は無い（p.6、Fig. 8）。
 - 装置は Tobii 4C（90 Hz）、視距離は約 100 cm、録画に焼き込んだ視線の点を画像処理で読み取る方式（p.2–3）。
-- **JEGE 2025 で正式版が出ている**（11/17 の再調査ドキュメントによる。書誌は未確認）。**正式版を引用する**。正式版を入手するまでは、ページはプレプリントのもので、本文で使うときは正式版で確かめ直す（2026-11-17 追加）
+- **正式版は題名を変えて出版されている**：High-Skilled First-Person Shooter Game Players Have Superior Situation-Based Gaze Control Abilities: Perspectives From the Actual and Controlled Gaming Environment. *Journal of Electronic Gaming and Esports*, 3(1), 2025. doi:10.1123/jege.2024-0034（著者の researchmap で 2026-11-17 に確認。出版社のページは開けず、PDF は未入手。無料で読めるかは未確認で、購読制の雑誌とみられる）
+- **正式版は入手できなかったので、プレプリント（段階1）を引く**（2026-11-17 ユーザー決定。旧：「正式版を引用する」）。本文には、正式版が題名を変えて出ていること、本論文はプレプリントを参照したことを書く。題名が変わっているので、数値・区分・ページが正式版と同じとは限らない。正式版を後で入手したら、引いている箇所（Information 1・2 の区分、ρ = −0.608、中位群と上位群の差）を照合し直す
 
 **Luo et al. (2025)**
 - 含まれた7研究のタイトルは Dota 2、Gran Turismo、FIFA 19、StarCraft、LoL、FIFA 21、Assetto Corsa Competizione（p.4、Table 1）。「FPS が含まれない」はこの表から言える。
@@ -145,7 +146,8 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 - **論文内で食い違いがある**。p.2 は EyeLink で毎秒30回測ると書き、p.4 はデータを 60 Hz で記録したと書いている。本文では、どちらとも決めずに書く
 - **検定はなく、記述だけ**。「差が無い」とは書けない
 - HP のゾーン単独の結果は本文に無い（p.5 は UI の要素全体とレーダーだけ）（2026-11-17 追加）
-- **IEEE の正式版がある（書誌は未確認）**。正式版を確かめてから引用する
+- **IEEE の正式版がある**：IEEE SmartWorld/SCALCOM/UIC/ATC/CBDCom/IOP/SCI 2019 の論文集（論文の索引サイトの表示による。DOI・ページは未確認。PDF は未入手）
+- **正式版は入手できなかったので、arXiv の版（段階1）を引く**（2026-11-17 ユーザー決定。旧：「正式版を確かめてから引用する」）。本文には、正式版が会議の論文集にあること、本論文は arXiv の版を参照したことを書く。arXiv の版が査読の前か後かは未確認なので、[Preprint] とは書かない。補助の比較文献で向きしか使わないので、版の違いの影響は小さい
 - **同じ研究グループ（Skoltech）による CS:GO の Retake の研究で、参加者が重なっている可能性がある。向きが同じでも、独立した2本の裏付けとして数えない**（2026-11-17 追加）
 
 **Velichkovsky et al. (2019)**（arXiv:1906.01699v2。ページは PDF のもの。2026-11-17 追加）
