@@ -1,6 +1,6 @@
 # 文献台帳（引用の段階）
 
-- 状態：確定版（2026-11-10）。2026-11-11 更新：PDF を入手した6本を段階1に上げ、本文で確かめた注意を §4 に足した。2026-11-16 更新：Yoon et al. (2025) を出版版の PDF で段階1に上げ、欠測 75 ms の出典を Tobii の公式ページに差し替えた
+- 状態：確定版（2026-11-10）。2026-11-11 更新：PDF を入手した6本を段階1に上げ、本文で確かめた注意を §4 に足した。2026-11-16 更新：Yoon et al. (2025) を出版版の PDF で段階1に上げ、欠測 75 ms の出典を Tobii の公式ページに差し替えた。2026-11-17 更新：補助の比較文献4本（Furukado et al. 2020、Korotin et al. 2019、Velichkovsky et al. 2019、小澤・梶並 2022）を段階1に足し、検定と信頼区間をやめたので4本を「不要」にした
 - 基準の commit：`82c6aae`（main に統合済み。`docs/GLOSSARY.md` と同じ）
 - 置き場所：`docs/LITERATURE.md`（公開リポジトリ）。**入れるのは書誌・ページ・段階・短い引用・注意だけ**。長い抜き書きと PDF は claude.ai の Project に置く
 - この台帳に無い文献は、卒論で引用しない。足すときは、書誌を確認してから、まずここに行を足す
@@ -28,10 +28,10 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | 柱 | 文献が担う部分 | 自分のデータが担う部分 | 段階 |
 |---|---|---|---|
 | 主要比較の区分（AOI1〜6）、新規性の比較対象 | Furukado & Hagiwara (2023) | — | **1** |
-| 並べ替え検定の方法 | Edgington & Onghena (2007) | — | 3 |
-| 並べ替え検定の p 値の式 p =（k + 1）/（N + 1） | Phipson & Smyth (2010) | — | **1** |
-| ρ の信頼区間の標準誤差 | Bonett & Wright (2000) | — | 3 |
-| 多重比較の補正 | Holm (1979) | — | 3 |
+| ~~並べ替え検定の方法~~ **不要（11/17）**：検定をやめた（ANALYSIS_PLAN §4b） | Edgington & Onghena (2007) | — | 3 |
+| ~~並べ替え検定の p 値の式 p =（k + 1）/（N + 1）~~ **不要（11/17）**：検定をやめた（ANALYSIS_PLAN §4b） | Phipson & Smyth (2010) | — | **1** |
+| ~~ρ の信頼区間の標準誤差~~ **不要（11/17）**：信頼区間をやめた（ANALYSIS_PLAN §4c） | Bonett & Wright (2000) | — | 3 |
+| ~~多重比較の補正~~ **不要（11/17）**：検定をやめた（ANALYSIS_PLAN §4b） | Holm (1979) | — | 3 |
 | 注視の定義（I-DT の方法） | Salvucci & Goldberg (2000) | — | **1** |
 | I-DT の閾値（最短 100 ms、分散 1°） | 目安の範囲：Salvucci & Goldberg (2000)。閾値で注視の数・時間が変わること：Blignaut (2009)（**閾値の範囲の根拠には使えない**。§4） | 予備実験（PL01〜PL03）での妥当性の確認（`docs/LAB_CHECKLIST.md` 4。目安は結果を見る前に記録、2026-11-11 に実行・決定） | **1** |
 | 注視を分ける欠測 75 ms（主解析の `max_gap_ms`） | Tobii の公式ページ（Tobii Ocumen の I-VT フィルタの説明。メーカー文書・非査読）：I-VT の gap fill-in の推奨値（2026-11-16 に Olsen (2012) から差し替え） | 参加者ごとの欠測の頻度（`missing_gaps`）と、200 ms の感度分析 | **1** |
@@ -45,10 +45,10 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | 文献 | 段階を上げるためにやること |
 |---|---|
 | Furukado, R., & Hagiwara, G. (2023). Gaze and electroencephalography (EEG) parameters in esports: Examinations considering genres and skill levels. *2023 International Workshop on Smart Info-Media Systems in Asia (SISA 2023)*, 107–112. https://doi.org/10.34385/proc.77.SS-2 | 済み（`22_SS-2_28.pdf`）。引用時の注意は §4 |
-| Edgington, E. S., & Onghena, P. (2007). *Randomization tests* (4th ed.). Chapman & Hall/CRC. ISBN 978-1-58488-589-4 | 相関の並べ替え検定を扱う章とページを確認し、写しを Project に入れる |
-| Phipson, B., & Smyth, G. K. (2010). Permutation P-values should never be zero: Calculating exact P-values when permutations are randomly drawn. *Statistical Applications in Genetics and Molecular Biology, 9*(1), Article 39. https://doi.org/10.2202/1544-6115.1585 | 済み（`1603.05766v1.pdf`、arXiv 版。**ページは雑誌版と違う**）。引用時の注意は §4 |
-| Bonett, D. G., & Wright, T. A. (2000). Sample size requirements for estimating Pearson, Kendall and Spearman correlations. *Psychometrika, 65*(1), 23–28. https://doi.org/10.1007/BF02294183 | PDF を Project に入れる。標準誤差 √((1 + ρ²/2)/(n − 3)) が論文のどの式かを確認する |
-| Holm, S. (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics, 6*(2), 65–70. https://www.jstor.org/stable/4615733 | PDF を Project に入れる |
+| Edgington, E. S., & Onghena, P. (2007). *Randomization tests* (4th ed.). Chapman & Hall/CRC. ISBN 978-1-58488-589-4 | **不要（11/17）**。検定をやめたので段階を上げない |
+| Phipson, B., & Smyth, G. K. (2010). Permutation P-values should never be zero: Calculating exact P-values when permutations are randomly drawn. *Statistical Applications in Genetics and Molecular Biology, 9*(1), Article 39. https://doi.org/10.2202/1544-6115.1585 | 済み（`1603.05766v1.pdf`、arXiv 版。**ページは雑誌版と違う**）。引用時の注意は §4。**不要（11/17）**：検定をやめた |
+| Bonett, D. G., & Wright, T. A. (2000). Sample size requirements for estimating Pearson, Kendall and Spearman correlations. *Psychometrika, 65*(1), 23–28. https://doi.org/10.1007/BF02294183 | **不要（11/17）**。信頼区間をやめたので段階を上げない（旧：PDF を Project に入れ、標準誤差 √((1 + ρ²/2)/(n − 3)) が論文のどの式かを確認する） |
+| Holm, S. (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics, 6*(2), 65–70. https://www.jstor.org/stable/4615733 | **不要（11/17）**。検定をやめたので段階を上げない（旧：PDF を Project に入れる） |
 | Salvucci, D. D., & Goldberg, J. H. (2000). Identifying fixations and saccades in eye-tracking protocols. In *Proceedings of the 2000 Symposium on Eye Tracking Research & Applications (ETRA '00)* (pp. 71–78). ACM. https://doi.org/10.1145/355017.355028 | 済み（`Salvucci-ETRA00.pdf`）。引用時の注意は §4 |
 | Blignaut, P. (2009). Fixation identification: The optimum threshold for a dispersion algorithm. *Attention, Perception, & Psychophysics, 71*(4), 881–895. https://doi.org/10.3758/APP.71.4.881 | 済み（`APP.71.4.881.pdf`）。比べている分散の測り方は5通り。**この研究の測り方（x の範囲 ＋ y の範囲）に近いのは Slv だが、Slv は範囲の「平均」で、この研究の値の半分に当たる**。引用時の注意は §4 |
 | Tobii. *Fixation Tobii IVT*（Tobii XR Devzone ＞ Tobii Ocumen ＞ Ocumen Filters）. https://developer.tobii.com/xr/ocumen/ocumen-filters/ocumen_filters/fixation_tobii_ivt/ （最終アクセス 2026-11-16）〔メーカー文書・非査読〕 | 済み（Project の `claude/2026-11-16_Web写し_Tobii_IVT推奨値.md`）。引用時の注意は §4 |
@@ -64,7 +64,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 
 ---
 
-## 2. 段階1（PDF あり）：10本
+## 2. 段階1（PDF あり）：14本
 
 書誌は、PDF の表記と出版社・PubMed Central などのページで確認した（下の3本は 2026-11-11）。
 
@@ -79,7 +79,11 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 | Montolio-Vila, A., Argilés, M., Sunyer-Grau, B., Quevedo, L., & Erickson, G. (2024). Effect of action video games in eye movement behavior: A systematic review. *Journal of Eye Movement Research, 17*(3), 6. https://doi.org/10.16910/jemr.17.3.6 | `jemr-17-03-f.pdf` | 対象13研究のうちゲームプレイ中に熟練度で比べたのは2本（p.16）。眼球運動の指標は課題に依存する（p.17）。ランクで群分けした例と自己選択バイアス（p.15–16） | §4 |
 | Jeong, I., Nobuto, T., Kaneko, N., Kato, T., & Nakazawa, K. (2023). Investigating the gaze control ability of VALORANT players using a Python-based tool. arXiv:2310.15542 | `2310.15542v1.pdf` | VALORANT の実プレイでの ROI 別の割合。区分の対応（Information 1・2） | **査読前のプレプリント**。本文に [Preprint] と書く。§4 |
 | Yoon, J.-S., Moon, H.-S., Boudaoud, B., Spjut, J., Frosio, I., Lee, B., & Kim, J. (2025). Modeling visually-guided aim-and-shoot behavior in first-person shooters. *International Journal of Human-Computer Studies, 199*, 103503. https://doi.org/10.1016/j.ijhcs.2025.103503 | `1-s2.0-S1071581925000606-main.pdf`（出版版） | ランクで熟練度を定義した例、無効データの除外の例 | §4（2026-11-16 に段階2から移した） |
-| Luo, Y., Chen, Y., Cho, J., Yan, C., & Seo, J. (2025). Differences in eye movement characteristics between expert and non-expert eSports players: A systematic review and meta-analysis. *Scientific Reports, 15*, 30185. https://doi.org/10.1038/s41598-025-12101-8 | `Differences_in_eye_movement_characteristics_betwee.pdf` | eスポーツの視線研究の現状。含まれた7研究に FPS が無いこと | §4 |
+| Luo, Y., Chen, Y., Cho, J., Yan, C., & Seo, J. (2025). Differences in eye movement characteristics between expert and non-expert eSports players: A systematic review and meta-analysis. *Scientific Reports, 15*, 30185. https://doi.org/10.1038/s41598-025-12101-8 | `Differences_in_eye_movement_characteristics_betwee.pdf` | eスポーツの視線研究の現状。含まれた7研究に FPS が無いこと。FPS 以外のジャンルで熟練者がミニマップなどの重要な要素に視線を向けるという記述（p.6、Table 3）。ANALYSIS_PLAN §4f で minimap を本文で取り上げる理由の1つ | §4 |
+| Furukado et al. (2020). *JHSE, 15*(Proc4), S1123–S1132（著者の全員・題名・DOI は未確認） | 未確認（Project にある） | 補助の比較文献（ANALYSIS_PLAN §7b-2）。対象のゲームはこの台帳では未確認 | §4（2026-11-17 追加） |
+| Korotin et al. (2019). arXiv:1908.06403v1（著者の全員・題名は未確認） | 未確認（Project にある） | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の HUD 要素への視線の割合（記述のみ） | **IEEE の正式版がある（書誌は未確認）。正式版を確かめてから引用する**。§4（2026-11-17 追加） |
+| Velichkovsky et al. (2019). arXiv:1906.01699v2（著者の全員・題名は未確認） | 未確認（Project にある） | 補助の比較文献（ANALYSIS_PLAN §7b-2）。CS:GO の平均注視時間（画面全体） | §4（2026-11-17 追加） |
+| 小澤・梶並 (2022). pp.49–52（著者の全員・題名・掲載誌は未確認） | `12_49.pdf` | 補助の比較文献（ANALYSIS_PLAN §7b-2）。VALORANT でミニマップに視線を向けた回数と時間 | §4（2026-11-17 追加） |
 
 ## 3. 段階2（メモに原文の引用とページ）：4本
 
@@ -106,19 +110,48 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 - **Table 2 の見出しは「%」だが、値は 0.668 のような割合の形**。数値を引くときは単位を確かめる。
 - 指標は「1試合あたりの注視時間の割合」で、分母の定義は書かれていない（p.109）。この研究の Gaze % と同じ計算とは言えない。
 - AOI1 の差を要素ごと（弾数・HP）に解釈しているが、AOI は分けていない（p.110）。
+- AOI1〜6 の群ごとの平均・SD・p・d は Table 2（p.109）。結果の節 III.A（p.109）で、AOI5（ミニマップ）は有意差がないが効果量が大きいと述べたうえで、熟練群はレティクルとミニマップに注目しやすいと解釈している（著者が熟練度による違いとして解釈した AOI。ANALYSIS_PLAN §4f）（2026-11-17 追加）
+- 上位3つの並び順（crosshair → minimap → 下部HUD）は、Table 2 の値から並べ直したもの（両群で共通。4位以下は群で入れ替わる）（2026-11-17 追加）
 
 **Jeong et al. (2023)**
 - **要旨と本文で相関の向きが食い違う**。要旨は正の相関、結果は Information 1 と KDA に負の相関（ρ = −0.608、p = .002、p.5、Fig. 7E）。引くのは結果の節。
 - ROI の割合と視線分布に、中位群と上位群の有意差は無い（p.6、Fig. 8）。
 - 装置は Tobii 4C（90 Hz）、視距離は約 100 cm、録画に焼き込んだ視線の点を画像処理で読み取る方式（p.2–3）。
+- **JEGE 2025 で正式版が出ている**（11/17 の再調査ドキュメントによる。書誌は未確認）。**正式版を引用する**。正式版を入手するまでは、ページはプレプリントのもので、本文で使うときは正式版で確かめ直す（2026-11-17 追加）
 
 **Luo et al. (2025)**
 - 含まれた7研究のタイトルは Dota 2、Gran Turismo、FIFA 19、StarCraft、LoL、FIFA 21、Assetto Corsa Competizione（p.4、Table 1）。「FPS が含まれない」はこの表から言える。
 - 検索は英語の査読論文だけ、2024-07-20 まで（p.2–3）。「eスポーツ全体で研究が無い」とは言えない。
 - 注視回数の信頼区間の表記（要旨と p.5 の「−0.55, −0.99」）は、p = 0.58 と合わない。**注視回数の信頼区間は引かない**。
 - AOI の結果は統合されておらず、記述だけ（p.6）。
+- FIFA や StarCraft で、熟練者がミニマップなどの重要な要素に視線を向けるという記述が p.6、各研究のまとめが Table 3（p.7）。**FPS の研究は含まれていないので、「FPS 以外のジャンルで」と書く**（2026-11-17 追加）
+
+**Furukado et al. (2020)**（JHSE, 15(Proc4), S1123–S1132。ページは掲載誌のもの。2026-11-17 追加）
+- 考察で使う箇所：熟練群と準熟練群の結果 t(7) = 2.97, p < .05, d = 1.88（S1128）。Time left、Lower part、Our team の表（S1129）。Our team の領域の考察（S1130）
+- 方法で使う箇所：MMR による群分け、Gazepoint GP3 HD（150 Hz）（S1125）。ボイスチャットは聞くだけ、生存中だけを解析、AOI への注視の回数、1回あたりの注視時間（S1126）。AOI の設定（Fig. 2、S1127）
+- **人数が食い違う**：アブストラクト（S1123）では熟練4名・準熟練5名、方法（S1125）では熟練5名・準熟練4名
+- 脳波の値が両群とも M = 3.75, SD = 2.87 で、写し間違いの可能性がある
+- 指標は注視の回数と1回あたりの時間で、Gaze %（サンプルの割合）ではない。比べるのは向きだけ（ANALYSIS_PLAN §7b-2）
+
+**Korotin et al. (2019)**（arXiv:1908.06403v1。ページは PDF のもの。2026-11-17 追加）
+- 考察で使う箇所：アマチュアのほうが UI の要素を長く見ていた（p.5）。Fig. 7 はプロの平均とアマチュアの平均のヒートマップで、値は画像の中にしかない
+- 方法で使う箇所：EyeLink、30 Hz（p.2）。15名（プロ5名、アマチュア10名）、Retake のモード（p.3）。UI の要素、60 Hz、生存中だけを解析、k-center によるクラスタリング、ゾーン（p.4）。p.2 の 30 Hz と p.4 の 60 Hz の関係は未確認
+- **検定はなく、記述だけ**。「差が無い」とは書けない
+- **IEEE の正式版がある（書誌は未確認）**。正式版を確かめてから引用する
+
+**Velichkovsky et al. (2019)**（arXiv:1906.01699v2。ページは PDF のもの。2026-11-17 追加）
+- 考察で使う箇所：Table 1（p.4）。平均の注視時間は Low 250 ms、High 278 ms、Pro 282 ms で、F(2,18) = 0.53、有意でない。SD は有意に違う（F = 9.72, p < .001）
+- 方法で使う箇所：群分けは 700 時間未満 N = 10、700 時間以上 N = 7、プロ N = 4（1万時間以上）（p.2）。Tobii EyeX、30 Hz、CS:GO の Retake のモード（p.3）。Mould 法で注視を取り出している（被験者ごとに閾値が変わる）（p.4）
+- **AOI を分けておらず、画面全体の値**。本研究の副指標（平均注視時間）と向きを比べるだけ。検出の方法も違う（Mould 法と I-DT）
+
+**小澤・梶並 (2022)**（`12_49.pdf`、pp.49–52。ページは掲載誌のもの。2026-11-17 追加）
+- 考察で使う箇所：表2（p.51）のうち**「未使用」の列だけ**を使う。敵が出たとき、ミニマップに視線を向けた回数／状況の回数は熟練者 11.8/14.7、非熟練者 5.2/15.7。向けるまでの時間は熟練者 1.45 秒、非熟練者 1.99 秒
+- 方法で使う箇所：VALORANT のコンペティティブモード。ミニマップは自分を中央に固定して、マップ全体を表示する設定（p.51）。群分けはランクで、シルバー以下6名、プラチナ以上6名（p.51）。視線計測は SENTRY GAMING EYE TRACKER（p.51）。画面は 1920×1080、ミニマップは 400×400 ピクセル（p.50）
+- **音声ガイドシステムの評価が目的の研究**
+- **検定はなく、平均の記述だけ**
 
 **Phipson & Smyth (2010)**（ページは arXiv 版 `1603.05766v1.pdf`）
+- **不要（11/17）**：検定をやめたので引かない（ANALYSIS_PLAN §4b）。下の注意は経緯として残す
 - ランダムに抜き出した並べ替えでの正確な p 値は (b + 1)/(m + 1)（p.6）。ANALYSIS_PLAN §4 の式 p = (k + 1)/(100,000 + 1) はこの形。
 - 並べ替えを重複ありで抜き出すと、この式は妥当だが保守的になる。保守的さは、並べ替えの総数が小さいほど大きい（p.8–9）。
 - 全部数え上げる場合の式（p.7）は、統計量の値がすべて異なる前提で導いている。この研究はランダムに抜き出すので使わない。
@@ -175,7 +208,7 @@ Web ページは、該当箇所の写し（URL・最終アクセス日・短い�
 **Project の `claude/追加文献調査_理論背景の補強.md` の 28 本（A1〜D6）と予備候補 12 本**
 - 要約と使いどころはあるが、原文の引用とページが無い。メモ自身も多くを「一部未確認」「内容要確認」としている。使う文献は、書誌を確認してからこの台帳に1行ずつ移す。
 - B2（Furukado & Hagiwara）と B1（Luo et al.）だけは PDF があり、段階1。
-- Velichkovsky et al. (2019) を「熟練者ほど注視が短い」と引かない（平均・中央値に群差は無い、とメモにある）。
+- Velichkovsky et al. (2019) を「熟練者ほど注視が短い」と引かない（平均・中央値に群差は無い、とメモにある）。2026-11-17 に PDF で段階1にした（§2・§4。平均の注視時間は F(2,18) = 0.53 で有意でない、Table 1、p.4）。
 - このメモは注視検出を I-VT の前提で書いている箇所がある。この研究は I-DT なので、メモの文案をそのまま使わない。
 
 **その他**
