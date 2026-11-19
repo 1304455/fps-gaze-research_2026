@@ -1,7 +1,7 @@
 # 用語・定義集（卒論用）
 
 - 状態：確定版（2026-11-10。ユーザーの修正指示を反映）
-- 基準の commit：`fb2a22c`（ブランチ `claude/furukado2020-aoi-1117`、2026-11-17。main の `f72055f` に、ANALYSIS_PLAN §7b-2 の Furukado 2020 の「画面下部」の書き直しを足した版。定義集に足す用語は無い）。旧：`0163e2f`（PR #24）
+- 基準の commit：`ce2fa69`（ブランチ `claude/advisor-approval-1119`、2026-11-19。PR #29。main の `dbcdd82` に、11/19 の指導教員の了承の記録を足した版。間の `8b7ca04`〔crosshair の半径の根拠と AOI の大きさの感度分析の保留〕・`465856c`〔HUD の AOI の余白の記述〕・`e171434`〔AOI の位置の確認〕は、定義集の項目に影響しないことを 11/19 に確かめた）。旧：`fb2a22c`（PR #25）
 - 置き場所：`docs/GLOSSARY.md`
 
 ## このファイルの役割
@@ -12,10 +12,10 @@
 
   ```powershell
   # 何か出たら、定義集に未反映の正本の変更がある（今いるブランチの HEAD と比べる）
-  git log --oneline fb2a22c..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
+  git log --oneline ce2fa69..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
   ```
 
-  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`fb2a22c` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
+  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`ce2fa69` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
 
 ### 出典の略記
 
