@@ -1,7 +1,7 @@
 # 用語・定義集（卒論用）
 
 - 状態：確定版（2026-11-10。ユーザーの修正指示を反映）
-- 基準の commit：`ecb8100`（ブランチ `claude/advisor-approval-1119`、2026-11-19。PR #29。`ce2fa69`〔11/19 の指導教員の了承の記録〕に、ANALYSIS_PLAN §7b の並び順の比べ方の書き直しと §7a の見出しの変更を足した版。定義集に足す・直す用語は無い）。旧：`ce2fa69`。その前の `fb2a22c` から `ce2fa69` までの `8b7ca04`・`465856c`・`e171434` は、定義集の項目に影響しないことを 11/19 に確かめた
+- 基準の commit：`0d1c194`（ブランチ `claude/lab-work-1126`、2026-11-26。main の `b51668e` に、ANALYSIS_PLAN §1・§6 の S01 の `minimap` の AOI 単位の除外と感度分析、RUN_PIPELINE の台帳の記入の手順と notes のキーを足した版。定義集は §8「除外」を直した）。旧：`ecb8100`（PR #29）
 - 置き場所：`docs/GLOSSARY.md`
 
 ## このファイルの役割
@@ -12,10 +12,10 @@
 
   ```powershell
   # 何か出たら、定義集に未反映の正本の変更がある（今いるブランチの HEAD と比べる）
-  git log --oneline ecb8100..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
+  git log --oneline 0d1c194..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
   ```
 
-  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`ecb8100` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
+  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`0d1c194` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
 
 ### 出典の略記
 
@@ -202,7 +202,7 @@
 | 探索的な解析 | 検定をせず、主張の根拠にしない解析。ρ と向きを、仮説を立てる材料として報告する | 「探索的」と必ず明記する | AP §8 |
 | 記述的な結果 | ρ も出さない結果。一人ひとりの点の図、全員の平均と範囲（最小〜最大）、積み上げ棒、群×ロールの人数の表、注視があったラウンドの割合、AOI 内の時間のうち注視の割合など | 群ごとの中央値・四分位範囲は出さない（2026-11-17 決定） | AP §7 |
 | 主解析／感度分析 | 主解析：事前に決めた本命の条件での解析。感度分析：仮定を変えても結論が変わらないかの確認。一覧は AP §6 | — | AP §6 |
-| 除外 | セッション単位で、`qc_report.csv` の基準で機械的に決める | 基準の一覧は正本を見て書く | AP §1、§2「除外基準」 |
+| 除外 | セッション単位で、`qc_report.csv` の基準で機械的に決める。**AOI 単位の除外**：台帳の notes の `aoi_exclude=<AOI 名>` で、そのセッションのその AOI だけを主解析から除く（S01 の `minimap`。2026-11-26） | 基準の一覧は正本を見て書く。AOI 単位の除外は、除いた AOI とセッションと理由を必ず書く | AP §1、§2「除外基準」 |
 
 ---
 
