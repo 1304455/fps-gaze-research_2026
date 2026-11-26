@@ -117,7 +117,7 @@ python -c "import json,sys; a=json.load(open(sys.argv[1],encoding='utf-8'))['act
      ```
   3. 2試合目の後の検証は subject を `${subj}-post2` にする（手順2b と同じコマンドの `-post` を `-post2` に）
   4. 2試合目は**別のセッション**として手順3〜7を行い、台帳にもう1行書く（`participant_id` と `group` は1試合目と同じ。
-     `calibration_file` は2試合目の前に使った較正：較正し直さなかったら1試合目と同じ `$calib`）。notes に `trial=2; post=<post2 のファイル名>`
+     `calibration_file` は2試合目の前に使った較正：較正し直さなかったら1試合目と同じ `$calib`）。notes に `trial=2;post=<post2 のファイル名>`
   5. 2試合目も降参で終わっても、3試合目はしない（notes に `surrender=1`）
 - 集計（手順8）は、同じ `participant_id` の2試合を**サンプル数・時間を足してから**割合を出す（`participant_aoi_metrics.csv`、既存の動作）
 
