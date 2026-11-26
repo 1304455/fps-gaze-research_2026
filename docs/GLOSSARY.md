@@ -1,7 +1,7 @@
 # 用語・定義集（卒論用）
 
 - 状態：確定版（2026-11-10。ユーザーの修正指示を反映）
-- 基準の commit：`0d1c194`（ブランチ `claude/lab-work-1126`、2026-11-26。main の `b51668e` に、ANALYSIS_PLAN §1・§6 の S01 の `minimap` の AOI 単位の除外と感度分析、RUN_PIPELINE の台帳の記入の手順と notes のキーを足した版。定義集は §8「除外」を直した）。旧：`ecb8100`（PR #29）
+- 基準の commit：`ba91a78`（ブランチ `claude/lab-work-1126`、2026-11-26。PR #31。main の `b51668e` に、ANALYSIS_PLAN §1・§6 の S01 の `minimap` の AOI 単位の除外と感度分析（11/16 に取り下げた案とは別であることの注記を含む）、RUN_PIPELINE の台帳の記入の手順と notes のキーを足した版。定義集は §8「除外」を直した）。旧：`0d1c194`、その前は `ecb8100`（PR #29）
 - 置き場所：`docs/GLOSSARY.md`
 
 ## このファイルの役割
@@ -12,10 +12,10 @@
 
   ```powershell
   # 何か出たら、定義集に未反映の正本の変更がある（今いるブランチの HEAD と比べる）
-  git log --oneline 0d1c194..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
+  git log --oneline ba91a78..HEAD -- CLAUDE.md docs/ANALYSIS_PLAN.md docs/RUN_PIPELINE.md src/aoi_detector/gaze_metrics.py src/aoi_detector/valorant_hud_aoi_circular.json
   ```
 
-  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`0d1c194` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
+  対象を `docs/` 全体にしない（定義集・台帳自身のコミットまで出てしまうため）。ブランチが main に入っても、`ba91a78` は main の履歴に残るので基準はそのままでよい（PR を squash せずに取り込む場合）。
 
 ### 出典の略記
 
