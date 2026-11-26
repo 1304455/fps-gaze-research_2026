@@ -246,6 +246,14 @@ T1・T2 は研究室PCでの実機確認が必要なので、コードだけ先�
 
 **注意**：検定の選び方・主要比較の選択は研究上の判断なので、実装前にユーザーと合意する。
 
+**2026-11-26 に分かった要件**（研究室PCでの台帳の修正・AOI の位置の確認から。実装はまだしない）
+1. `participant_id` が `PL` で始まる行を除く（ANALYSIS_PLAN §1「予備実験の参加者は本解析に入れない」）
+2. notes に `calib_failed_3x` があるセッションを主解析から除く（感度分析でだけ使う。RUN_PIPELINE 1b。S07）。`calibration_file` の calib JSON の `passed`（`require_calibration_passed`）でも不合格になるはずだが、notes でも同じ結果になるかを確かめる
+3. notes の `aoi_exclude=<AOI 名>` で、そのセッションのその AOI だけを除く（S01 の `minimap`。ANALYSIS_PLAN §1）。そのセッションのほかの AOI は使う
+   - 下部HUD（統合）と内訳の3つの関係：内訳の3つのどれかが除かれたセッションで下部HUD（統合）をどう扱うかは、**正本に規則が見当たらない**（2026-11-26 の指示では「内訳の3つがすべて使えるときだけ使う」という 11/16 の規則とされていたが、ANALYSIS_PLAN・CLAUDE.md・GLOSSARY に無い）。実装の前に決める。今回の `aoi_exclude` は `minimap` だけなので、下部HUD には影響しない
+4. 眼と画面の距離の基準（650 mm との差 ≤ 100 mm）を判定に入れる。`aggregate_sessions.py` には `max_eye_distance_from_reference_mm` として既にあり、`docs/templates/qc_criteria_template.json` の値は 100。**`--qc-criteria` にこの値を渡して実行すること**を手順で確かめる（S08 は中央値 490 mm で当てはまる見込み。判定は qc_report で機械的に行う）
+5. notes の `post=` は `data/raw` の中のファイル名として読む（`;` の後ろの空白は許容する。フルパスが残っていても読めるように、ファイル名の部分だけを使う）
+
 ---
 
 ## T9 配布形態（exe化）の検討（P2・保留）
