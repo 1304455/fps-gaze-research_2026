@@ -58,7 +58,11 @@ $calib = (Join-Path (Resolve-Path .\data\raw) $sel)
 - [ ] `$cands` が今回の較正＋検証の3回だけ（別の日や1試合目の回が入っていない）。`calib_${subj}_*.json` は日付を問わず同じ参加者の回を全部拾うので、直近の3つに限っている（2026-11-06：PL01 で 10/29 の5本が候補に混ざっていた。降参で2試合目の前に較正し直したときに1試合目の回が選ばれるのを防ぐ）
 - [ ] `入れ直し: 成功（SHA-256 一致）` と出る（出なければ試合に進まない）
 - [ ] `$calib` が選ばれた回の calib JSON になっている（台帳の `calibration_file` にはこのファイルを書く）
-- 台帳の notes に `calib_failed_3x; calib_best=<選ばれた calib JSON>; calibapply=<calibapply_*.json>` を書く
+- 台帳の notes に `calib_failed_3x;calib_best=<選ばれた calib JSON のファイル名>;calibapply=<calibapply_*.json のファイル名>` を書く（`;` の後ろに空白を入れない。ほかの項目と同じ。2026-11-26 に直した）。どちらも**ファイル名だけ**（フルパスにしない）：
+  ```powershell
+  $notes1b = "calib_failed_3x;calib_best=" + (Split-Path $calib -Leaf) + ";calibapply=" + (Split-Path $apply -Leaf)   # 手順5の $notes の先頭に足す
+  ```
+  - 例（S07）：`calib_failed_3x;calib_best=calib_S07_20261124_181644.json;calibapply=calibapply_S07_20261124_181827.json`
 - 入れ直した後は頭と Spark を動かさずに手順2へ
 
 ## 2. 計測（較正の後、頭と Spark を動かさずに続けて）
@@ -69,6 +73,7 @@ python .\src\gaze_estimation\tobii_capture_with_sync_flash_v5.py --subject $subj
 - **`--calibrate` は付けない**（手順1の較正が上書きされる）
 - [ ] **試合の前に**、ボイスチャットを使わない（話さない・聞かない）ことを参加者に説明したか（2026-11-17 追加。CLAUDE.md §2「ボイスチャット」）
 - [ ] **試合の前に**、ゲーム側の VC 設定（パーティーの VC とチームの VC のオンオフ、音量）を見て記録する。設定は変えない。手順5で台帳の notes に書く
+- [ ] **試合の前に**、ミニマップのサイズ（と位置）が決めた設定（全参加者で固定。CLAUDE.md §2「較正・AOI・注視の方式」）になっているか、設定画面で見る（2026-11-26 追加。S01 は2試合ともサイズが違っていて、主解析で `minimap` を除くことになった。LAB_CHECKLIST 5b）
 - 起動すると実験条件（マップ・エージェントなど）を聞かれるので、そのまま答える
 - 開始・停止は、別端末のブラウザから、コンソールに出る制御 URL で行う
 - **v5 を起動するたびに、コンソールに出た新しい URL を開き直す**（token は起動ごとに変わる。前の回のページのボタンは `invalid token` になり、開始も停止も効かない。2026-11-06 の試験で発生）
@@ -214,8 +219,8 @@ $peak  = "Silver3"              # 最高ランク（参考。分からなけれ�
 $group = "low"                  # アイアン1〜シルバー3 = low ／ アセンダント1以上 = high ／ ゴールド〜ダイヤモンド = mid
 $side  = "attack"               # 最初のラウンドの攻守（attack / defense）。手順6の注釈でも同じ値を使う
 $notes = "ETM相対角度12°;post=" + (Split-Path $post -Leaf)   # 試合後の検証のファイル名（手順2b）
-$scoreAlly  = "13"             # 試合の最後の自チームのスコア（降参で終わったら降参した時点。分からなければ ""）
-$scoreEnemy = "9"              # 同じく相手チームのスコア
+$scoreAlly  = ""               # 試合の最後の自チームのスコア（降参で終わったら降参した時点）。毎回、試合履歴で見て書く
+$scoreEnemy = ""               # 同じく相手チームのスコア。例の値を入れておかない（2026-11-26：例の 13-9 のまま追記された行が4件あった）
 $m = ".\data\sessions_manifest.csv"
 if (-not (Test-Path $m)) { Set-Content $m -Value (Get-Content .\docs\templates\sessions_manifest_template.csv -TotalCount 1 -Encoding UTF8) -Encoding UTF8 }
 $lines = @(Get-Content $m -Encoding UTF8)
@@ -232,13 +237,18 @@ Import-Csv $m -Encoding UTF8 | Select-Object -Last 1 | Format-List
 - **`rank_current` は必ず書く**（2026-11-06）。集計（手順8）が `rank_current` から期待される group と台帳の `group` を照合し、合わなければエラーで止まる（PL03 で low→high、PL01 で low→mid の書き間違いがあったため）。空欄だと照合できず警告だけになる
 - `eye_screen_distance_cm` は巻尺で実際に測ったときだけ書く（解析の距離は眼位置の実測値を使うので、空欄でよい）
 - 値にカンマを入れない（`notes` は `;` で区切る）
-- ボイスチャット（2026-11-17 追加）：notes に `vc_explained=1;vc_party=on|off;vc_team=on|off;vc_vol=<設定画面の値>` の形で書く（音量の項目が複数あれば `vc_vol_party=…;vc_vol_team=…` のように分ける）。S01〜S03 は設定の記録が無いので `vc=未記録（参加者はVCを使用せず）` と書く
+- ボイスチャット（2026-11-17 追加）：notes に `vc_explained=1;vc_party=on|off;vc_team=on|off;vc_vol=<設定画面の値>` の形で書く（音量の項目が複数あれば `vc_vol_party=…;vc_vol_team=…` のように分ける）。S01〜S08 は設定の記録が無いので `vc=未記録（参加者はVCを使用せず）` と書く（2026-11-26 に S04〜S08 も同じにした）。項目名を実際の設定画面に合わせるのは S09 から
+- 解析に関わる notes のキー（2026-11-26 追加。ほかの手順で決めたキーは各手順を見る：`calib_failed_3x` ほか（1b）、`surrender`・`trial`・`trial_arg_mistake`・`post_subject_mistake`（2c）、`post`（2b））
+  - `aoi_exclude=<AOI 名>`：そのセッションのその AOI だけを主解析から除く（例：`aoi_exclude=minimap`。ANALYSIS_PLAN §1）
+  - `minimap_size_mistake=1`：ミニマップのサイズが決めた設定と違っていた（S01。`aoi_exclude=minimap` と一緒に書く）
 - 後から列を足すときは `notepad $m` で編集する。**Excel で開いて保存しない**（`16:9` が `16:09` に変わる。ver3 の解像度チェックで止まる。
   止まったら `--allow-resolution-mismatch` で通さず台帳を直す）
 - **集計の前に、台帳・qc_report を Excel で開いていたら閉じる**（開いたままだと集計の書き出しが `PermissionError` で止まる。10/21 に発生）
 
 確認（**今回の `$base` の行が出て、列がずれていないことを見てから手順6に進む**）：
 - [ ] `session_base` が `$base`、`participant_id` / `group` / `start_side` / `aspect: 16:9` / `calibration_file` が正しい列に入っている
+- [ ] notes の `post=` が**ファイル名だけ**（`calib_<ID>-post_<日時>.json`。`C:\` などのフルパスになっていない。2026-11-26：S04〜S07 でフルパスが入っていた）
+- [ ] `score_ally` / `score_enemy` が**この試合の実際のスコア**（試合履歴で確かめた値。手順5の例の値や前の試合の値のままではない）
 - 台帳に行が無いと、ver3 は警告だけ出して解像度の確認を飛ばし、集計ではそのセッションが参加者集計から外れる（10/20 の通し確認で発生）
 
 ## 6. 分析区間の注釈
